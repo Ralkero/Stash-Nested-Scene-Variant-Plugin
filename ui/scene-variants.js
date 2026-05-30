@@ -32,6 +32,10 @@
     return m ? m[1] : null;
   }
 
+  function isScenesBrowseRoute() {
+    return /(?:^|\/)scenes\/?$/.test(window.location.pathname);
+  }
+
   function customFields(scene) {
     return scene && scene.custom_fields && typeof scene.custom_fields === "object" ? scene.custom_fields : {};
   }
@@ -370,23 +374,65 @@
       anchor.parentElement;
   }
 
+  function metadataRowScore(node, card) {
+    if (!node || node === card || node.querySelector(".smv-card-variant-menu")) return 0;
+    var text = (node.textContent || "").replace(/\s+/g, " ").trim();
+    if (text.length > 80) return 0;
+    var iconCount = node.querySelectorAll("svg, i, .fa, .svg-inline--fa, [data-icon]").length;
+    var digitCount = (text.match(/\d+/g) || []).length;
+    var className = String(node.className || "");
+    var score = 0;
+    if (iconCount >= 2) score += 8;
+    else if (iconCount === 1) score += 4;
+    if (digitCount >= 2) score += 8;
+    else if (digitCount === 1) score += 4;
+    if (/tag|group|studio|performer|marker|meta|indicator|count|footer/i.test(className)) score += 5;
+    if (/title|image|thumbnail|preview|caption|description/i.test(className)) score -= 8;
+    if (node.querySelector("a[href*='/scenes/']")) score -= 6;
+    return score;
+  }
+
+  function bestMetadataRow(card) {
+    if (!card) return null;
+    var best = null;
+    var bestScore = 0;
+    var nodes = Array.prototype.slice.call(card.querySelectorAll("div, span, footer, section"));
+    nodes.forEach(function (node) {
+      var score = metadataRowScore(node, card);
+      if (score > bestScore) {
+        best = node;
+        bestScore = score;
+      }
+    });
+    return bestScore >= 8 ? best : null;
+  }
+
+  function ensureMetadataRow(card) {
+    var row = bestMetadataRow(card);
+    if (row) return row;
+    row = el("div", "smv-metadata-row-fallback");
+    card.appendChild(row);
+    return row;
+  }
+
   function cardFooter(card) {
     if (!card) return null;
     var selectors = [
+      ".scene-card-footer .scene-card-tags",
+      ".scene-card-footer [class*='tag']",
+      ".scene-card-footer [class*='group']",
       ".scene-card-footer",
       ".scene-card__footer",
-      ".scene-card-details",
+      ".card-footer",
       ".scene-card__details",
       ".scene-card-info",
-      ".scene-card__info",
-      ".card-footer",
-      ".card-body"
+      ".scene-card__info"
     ];
     for (var i = 0; i < selectors.length; i++) {
       var found = card.querySelector(selectors[i]);
       if (found) return found;
     }
-    return card;
+    return ensureMetadataRow(card);
   }
 
   function chainIcon() {
@@ -459,7 +505,7 @@
     if (!card) return;
     applyVariantVisibility(card, scene);
     if (cf.variant_role !== "primary" || !count || card.querySelector(".smv-card-variant-menu")) return;
-    var footer = cardFooter(card);
+    var footer = ensureMetadataRow(card) || cardFooter(card);
     var menu = el("span", "smv-card-variant-menu");
     var trigger = el("button", "smv-variant-trigger");
     trigger.type = "button";
@@ -505,6 +551,10 @@
 
   function toggleNestedVariantVisibility() {
     setShowNestedVariants(!showNestedVariants());
+    Array.prototype.forEach.call(document.querySelectorAll("[data-smv-hidden-variant='true'], .smv-hidden-variant-card"), function (card) {
+      card.classList.remove("smv-hidden-variant-card");
+      card.removeAttribute("data-smv-hidden-variant");
+    });
     setupCardVariantMenus();
   }
 
@@ -513,9 +563,13 @@
   }
 
   function injectEllipsisMenuToggle(root) {
-    var containers = Array.prototype.slice.call((root || document).querySelectorAll(".dropdown-menu, [role='menu'], .popover, .modal, .btn-group.open, .show"));
+    if (!isScenesBrowseRoute()) return;
+    var containers = Array.prototype.slice.call((root || document).querySelectorAll(".dropdown-menu, [role='menu'], .popover, .modal, .btn-group.open > .dropdown-menu, .show > .dropdown-menu, .show[role='menu']"));
     containers.forEach(function (container) {
       if (!container || container.querySelector(".smv-show-nested-toggle")) return;
+      if (container.classList && container.classList.contains("smv-variant-dropdown")) return;
+      if (container.closest && container.closest(".smv-card-variant-menu")) return;
+      if (container.querySelector(".smv-variant-option")) return;
       var item = el("button", "smv-show-nested-toggle", menuText());
       item.type = "button";
       item.addEventListener("click", function (event) {
@@ -530,14 +584,17 @@
 
   function setupToolbarToggleWatcher() {
     document.addEventListener("click", function (event) {
+      if (!isScenesBrowseRoute()) return;
       var target = event.target;
       var button = target && target.closest && target.closest("button, .btn, [role='button']");
       if (!button) return;
       var text = (button.textContent || "").trim();
       var label = button.getAttribute("aria-label") || button.getAttribute("title") || "";
-      if (text === "..." || text === "\u2026" || /more|options|ellipsis/i.test(label)) {
+      var hasIcon = !!button.querySelector("svg, i, .fa, .svg-inline--fa");
+      if (text === "..." || text === "\u2026" || /more|options|ellipsis|menu/i.test(label) || hasIcon) {
         setTimeout(function () { injectEllipsisMenuToggle(document); }, 80);
         setTimeout(function () { injectEllipsisMenuToggle(document); }, 250);
+        setTimeout(function () { injectEllipsisMenuToggle(document); }, 600);
       }
     }, true);
   }
@@ -556,6 +613,7 @@
     }
     var observer = new MutationObserver(function () {
       setupCardVariantMenus();
+      injectEllipsisMenuToggle(document);
     });
     observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("click", function () { closeVariantMenus(); });

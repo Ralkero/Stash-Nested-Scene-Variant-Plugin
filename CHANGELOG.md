@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.9
+
+- Fixed scene-card variant dropdown placement so it targets the existing metadata counter row beside Tags and Groups instead of the upper card details area.
+- Made the nested-variant show/hide menu injection respond to icon-only toolbar ellipsis menus and newly opened dropdowns.
+- Added a fallback metadata row only when Stash card markup does not expose an existing counter row.
+
 ## 0.1.8
 
 - Confined the scene-page `Variants` panel to exact scene-player routes so it is removed when returning to browsing pages.

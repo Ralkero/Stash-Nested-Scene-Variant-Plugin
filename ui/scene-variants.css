@@ -67,10 +67,18 @@
   display: none !important;
 }
 
+.smv-metadata-row-fallback {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  min-height: 26px;
+}
+
 .smv-card-variant-menu {
   align-items: center;
   display: inline-flex;
-  margin-left: 8px;
+  margin-left: 10px;
   position: relative;
   vertical-align: middle;
   z-index: 8;
