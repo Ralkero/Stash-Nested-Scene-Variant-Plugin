@@ -9,7 +9,7 @@ The plugin uses an embedded JavaScript task/hook engine plus a UI JavaScript pan
 
 ## Files
 
-- `plugin.yml` - Stash plugin manifest, settings, tasks, hook, UI assets
+- `scene-metadata-variants-v1.yml` - Stash plugin manifest, settings, tasks, hook, UI assets
 - `scene-metadata-variants.js` - embedded JS task/hook engine
 - `ui/scene-variants.js` - scene-page panel and best-effort scene-card badge UI
 - `ui/scene-variants.css` - UI styling
@@ -24,6 +24,8 @@ The plugin uses an embedded JavaScript task/hook engine plus a UI JavaScript pan
 ## V1 Status
 
 This V1 is implemented and mock-tested. Live Stash v0.31.1 schema introspection has not yet been run in this workspace, so install first with `dryRun: true` and verify in the GraphQL/task logs before live writes.
+
+The manifest is intentionally named `scene-metadata-variants-v1.yml` because Stash uses the YAML filename as the plugin ID. A generic `plugin.yml` filename can collide with other manually installed plugins.
 
 ## Key Safety Defaults
 

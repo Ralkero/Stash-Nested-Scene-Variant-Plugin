@@ -1,6 +1,6 @@
 name: Scene Metadata Variants
 description: Stash v0.31.1 plugin for custom auto-tagging and scene variant nesting.
-version: 0.1.0
+version: 0.1.1
 interface: js
 exec:
   - scene-metadata-variants.js
@@ -125,8 +125,10 @@ tasks:
       dryRun: true
 
 hooks:
-  - name: Scene.Create.Post
+  - name: Auto-tag newly created scene
     description: Dry-run auto-tag newly created scenes after re-fetching scene data by ID.
+    triggeredBy:
+      - Scene.Create.Post
     defaultArgs:
       mode: hook_create
       dryRun: true

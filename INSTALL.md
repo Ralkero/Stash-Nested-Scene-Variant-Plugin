@@ -16,6 +16,8 @@ Target: Stash v0.31.1.
 
 4. Confirm the plugin appears as `Scene Metadata Variants`.
 
+   The manifest file is named `scene-metadata-variants-v1.yml` on purpose. Stash uses the YAML filename as the plugin ID, so a generic `plugin.yml` can collide with other local plugins.
+
 5. Leave `dryRun` enabled for the first run.
 
 6. Keep creation settings disabled until dry-run output looks correct:
