@@ -457,15 +457,45 @@
     return svg;
   }
 
+  function variantDropdown(menu) {
+    return menu && (menu._smvDropdown || menu.querySelector(".smv-variant-dropdown"));
+  }
+
+  function positionVariantDropdown(menu) {
+    var dropdown = variantDropdown(menu);
+    var trigger = menu && menu.querySelector(".smv-variant-trigger");
+    if (!dropdown || !trigger) return;
+    var rect = trigger.getBoundingClientRect();
+    var margin = 8;
+    var width = Math.max(210, Math.min(320, window.innerWidth - (margin * 2)));
+    var left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+    dropdown.style.minWidth = width + "px";
+    dropdown.style.left = left + "px";
+    dropdown.style.top = Math.max(margin, rect.bottom + 6) + "px";
+    window.setTimeout(function () {
+      if (!dropdown.classList.contains("is-open")) return;
+      var menuRect = dropdown.getBoundingClientRect();
+      if (menuRect.bottom > window.innerHeight - margin && rect.top > menuRect.height + margin) {
+        dropdown.style.top = Math.max(margin, rect.top - menuRect.height - 6) + "px";
+      }
+    }, 0);
+  }
+
   function closeVariantMenus() {
     Array.prototype.forEach.call(document.querySelectorAll(".smv-card-variant-menu.is-open"), function (node) {
+      node.classList.remove("is-open");
+      var dropdown = variantDropdown(node);
+      if (dropdown) dropdown.classList.remove("is-open");
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".smv-variant-dropdown.is-open"), function (node) {
       node.classList.remove("is-open");
     });
   }
 
   function fillVariantMenu(menu, scene) {
     if (menu.getAttribute("data-loaded") === "true") return;
-    var dropdown = menu.querySelector(".smv-variant-dropdown");
+    var dropdown = variantDropdown(menu);
+    if (!dropdown) return;
     dropdown.textContent = "Loading...";
     Promise.all(variantChildren(scene).map(findScene)).then(function (children) {
       dropdown.innerHTML = "";
@@ -515,7 +545,9 @@
     var dropdown = el("div", "smv-variant-dropdown");
     dropdown.setAttribute("role", "menu");
     menu.appendChild(trigger);
-    menu.appendChild(dropdown);
+    menu._smvDropdown = dropdown;
+    dropdown._smvOwner = menu;
+    document.body.appendChild(dropdown);
     trigger.addEventListener("click", function (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -523,7 +555,10 @@
       closeVariantMenus();
       if (opening) {
         menu.classList.add("is-open");
+        dropdown.classList.add("is-open");
+        positionVariantDropdown(menu);
         fillVariantMenu(menu, scene);
+        positionVariantDropdown(menu);
       }
     });
     footer.appendChild(menu);

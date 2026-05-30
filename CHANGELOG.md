@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.10
+
+- Rendered scene-card variant dropdowns as fixed floating menus attached to `document.body` so card/grid overflow no longer clips them.
+- Kept the trigger in the metadata counter row while positioning the dropdown under the trigger.
+
 ## 0.1.9
 
 - Fixed scene-card variant dropdown placement so it targets the existing metadata counter row beside Tags and Groups instead of the upper card details area.

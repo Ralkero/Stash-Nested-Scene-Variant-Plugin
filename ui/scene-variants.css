@@ -119,15 +119,13 @@
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
   color: #f2f5f7;
   display: none;
-  left: 0;
   min-width: 210px;
   padding: 6px;
-  position: absolute;
-  top: calc(100% + 6px);
+  position: fixed;
   z-index: 10000;
 }
 
-.smv-card-variant-menu.is-open .smv-variant-dropdown {
+.smv-variant-dropdown.is-open {
   display: grid;
   gap: 4px;
 }

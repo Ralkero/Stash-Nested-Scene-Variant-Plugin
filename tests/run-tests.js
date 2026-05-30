@@ -396,6 +396,7 @@ test("UI task runner includes the Stash manifest plugin id", () => {
   assert.ok(uiSource.includes("bestMetadataRow"), "UI should target the existing metadata counter row");
   assert.ok(uiSource.includes("smv-metadata-row-fallback"), "UI should provide a metadata row fallback only when needed");
   assert.ok(uiSource.includes("injectEllipsisMenuToggle(document)"), "UI should inject show/hide into opened toolbar menus");
+  assert.ok(uiSource.includes("positionVariantDropdown"), "variant dropdown should be positioned outside clipped card overflow");
   assert.ok(!uiSource.includes("smv-card-badge"), "old thumbnail-corner variant badge should not be rendered");
   assert.ok(uiSource.includes("removePanel()"), "scene page panel should be removed when leaving a scene route");
 });
