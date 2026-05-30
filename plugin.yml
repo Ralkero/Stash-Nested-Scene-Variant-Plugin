@@ -1,0 +1,138 @@
+name: Scene Metadata Variants
+description: Stash v0.31.1 plugin for custom auto-tagging and scene variant nesting.
+version: 0.1.0
+interface: js
+exec:
+  - scene-metadata-variants.js
+errLog: info
+
+settings:
+  dryRun:
+    displayName: Dry run by default
+    type: BOOLEAN
+  createMissingTags:
+    displayName: Create missing character/review/variant tags
+    type: BOOLEAN
+  createMissingGroups:
+    displayName: Create missing artist Groups
+    type: BOOLEAN
+  createMissingStudios:
+    displayName: Create missing franchise Studios
+    type: BOOLEAN
+  confidenceThreshold:
+    displayName: Auto-apply confidence threshold
+    type: NUMBER
+  franchiseStudioField:
+    displayName: Franchise field
+    type: STRING
+  variantHiddenTag:
+    displayName: Variant hidden helper tag
+    type: STRING
+  allowOverwrite:
+    displayName: Allow metadata overwrite
+    type: BOOLEAN
+  variantScanLimit:
+    displayName: Variant maintenance scan limit
+    type: NUMBER
+  variantScanPageSize:
+    displayName: Variant maintenance page size
+    type: NUMBER
+  needsReviewTag:
+    displayName: Needs review helper tag
+    type: STRING
+  enableManualVariantNesting:
+    displayName: Enable manual variant nesting UI
+    type: BOOLEAN
+  addHiddenTagWhenNested:
+    displayName: Add hidden tag when nesting variant
+    type: BOOLEAN
+  removeHiddenTagWhenUnlinked:
+    displayName: Remove hidden tag when unlinking variant
+    type: BOOLEAN
+  copyPrimaryStudioToVariantIfMissing:
+    displayName: Copy primary studio to variant if missing
+    type: BOOLEAN
+  copyPrimaryGroupsToVariantIfMissing:
+    displayName: Copy primary groups to variant if missing
+    type: BOOLEAN
+  copyPrimaryTagsToVariantIfMissing:
+    displayName: Copy primary tags to variant if missing
+    type: BOOLEAN
+  allowVariantMetadataOverwrite:
+    displayName: Allow metadata overwrite during nesting
+    type: BOOLEAN
+
+tasks:
+  - name: Bulk auto-tag scenes
+    description: Backfill scene Studio/Groups/Tags using the custom franchise/artist/character mapping.
+    defaultArgs:
+      mode: bulk_auto_tag
+      dryRun: true
+
+  - name: Link variant
+    description: Link an existing child scene under a primary scene using custom_fields.
+    defaultArgs:
+      mode: link_variant
+      dryRun: true
+
+  - name: Unlink variant
+    description: Remove one child scene from its variant set.
+    defaultArgs:
+      mode: unlink_variant
+      dryRun: true
+
+  - name: Promote variant to primary
+    description: Promote a child variant to become the primary scene for its set.
+    defaultArgs:
+      mode: promote_variant
+      dryRun: true
+
+  - name: Move variant to primary
+    description: Move an existing child variant under a different primary scene.
+    defaultArgs:
+      mode: move_variant
+      dryRun: true
+
+  - name: Rename variant
+    description: Update a child variant label.
+    defaultArgs:
+      mode: rename_variant
+      dryRun: true
+
+  - name: Reorder variants
+    description: Update child order for a primary scene.
+    defaultArgs:
+      mode: reorder_variants
+      dryRun: true
+
+  - name: Rebuild variant set
+    description: Reconcile one primary scene and its children from custom_fields.
+    defaultArgs:
+      mode: rebuild_variant_set
+      dryRun: true
+
+  - name: Validate variant graph
+    description: Validate all variant relationships and optionally repair safe inconsistencies.
+    defaultArgs:
+      mode: validate_variant_graph
+      dryRun: true
+      fix: false
+
+  - name: Rollback variant data
+    description: Remove plugin-owned variant custom fields from scenes. Does not delete scenes.
+    defaultArgs:
+      mode: rollback_variants
+      dryRun: true
+
+hooks:
+  - name: Scene.Create.Post
+    description: Dry-run auto-tag newly created scenes after re-fetching scene data by ID.
+    defaultArgs:
+      mode: hook_create
+      dryRun: true
+
+ui:
+  javascript:
+    - ui/scene-variants.js
+  css:
+    - ui/scene-variants.css

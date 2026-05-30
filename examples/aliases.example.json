@@ -1,0 +1,24 @@
+{
+  "studios": {
+    "sf": "Street Fighter",
+    "street fighter": "Street Fighter",
+    "re": "Resident Evil",
+    "resident evil": "Resident Evil"
+  },
+  "groups": {
+    "nodu": "NoduSFM",
+    "nodusfm": "NoduSFM"
+  },
+  "characters": {
+    "cammy": "Cammy White",
+    "chun li": "Chun-Li",
+    "2b": "2B",
+    "dva": "D.Va"
+  },
+  "characterStudios": {
+    "cammy white": "Street Fighter",
+    "chun li": "Street Fighter",
+    "2b": "Nier: Automata",
+    "d va": "Overwatch"
+  }
+}
