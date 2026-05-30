@@ -20,6 +20,19 @@
   margin-bottom: 8px;
 }
 
+.smv-mode {
+  align-items: center;
+  color: #c6d0d8;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.smv-mode input {
+  margin: 0;
+}
+
 .smv-list,
 .smv-actions {
   display: flex;

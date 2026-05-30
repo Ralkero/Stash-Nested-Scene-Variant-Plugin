@@ -48,6 +48,7 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Navigation-first variant selector.
 - [x] Best-effort scene card variant badge.
 - [x] UI task runner uses the actual Stash manifest plugin ID.
+- [x] UI variant actions default to dry-run through a visible toggle.
 - [x] Document saved-filter hiding workflow.
 - [x] Document V1 UI limitations.
 

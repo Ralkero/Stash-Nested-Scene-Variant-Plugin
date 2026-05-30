@@ -2,6 +2,7 @@
   "use strict";
 
   var PLUGIN_IDS = ["scene-metadata-variants-v1", "stash-scene-metadata-variants-v1", "scene-metadata-variants", "Scene Metadata Variants"];
+  var DRY_RUN_KEY = "scene-metadata-variants-ui-dry-run";
   var TASKS = {
     link: "Link variant",
     unlink: "Unlink variant",
@@ -116,6 +117,27 @@
     return b;
   }
 
+  function uiDryRun() {
+    return window.localStorage.getItem(DRY_RUN_KEY) !== "false";
+  }
+
+  function setUiDryRun(value) {
+    window.localStorage.setItem(DRY_RUN_KEY, value ? "true" : "false");
+  }
+
+  function taskJobId(data) {
+    return data && data.runPluginTask ? String(data.runPluginTask) : "";
+  }
+
+  function afterTask(data, dryRun) {
+    var job = taskJobId(data);
+    if (dryRun) {
+      window.alert("Dry run queued" + (job ? " as job " + job : "") + ". Check the Stash task log before applying.");
+      return;
+    }
+    window.location.reload();
+  }
+
   function variantStatus(scene) {
     var cf = customFields(scene);
     if (cf.variant_role === "primary") return "Primary scene with " + variantChildren(scene).length + " variants";
@@ -204,6 +226,15 @@
     panel.appendChild(el("div", "smv-title", "Variants"));
     panel.appendChild(el("div", "smv-status", infoText(scene)));
 
+    var mode = el("label", "smv-mode");
+    var dryRunBox = document.createElement("input");
+    dryRunBox.type = "checkbox";
+    dryRunBox.checked = uiDryRun();
+    dryRunBox.addEventListener("change", function () { setUiDryRun(dryRunBox.checked); });
+    mode.appendChild(dryRunBox);
+    mode.appendChild(document.createTextNode(" Dry run"));
+    panel.appendChild(mode);
+
     var cf = customFields(scene);
     var list = el("div", "smv-list");
 
@@ -232,33 +263,37 @@
     actions.appendChild(button("Add Existing Scene", function () {
       openSceneSearchModal("Add Existing Scene as Variant", function (selected) {
         var label = window.prompt("Variant label", "Variant") || "Variant";
-        if (!window.confirm("Add \"" + sceneTitle(selected) + "\" as a variant of \"" + sceneTitle(scene) + "\"?")) return;
-        runPluginTask(TASKS.link, { mode: "link_variant", dryRun: false, primarySceneId: String(scene.id), childSceneId: String(selected.id), label: label }).then(function () {
-          window.location.reload();
+        var dryRun = uiDryRun();
+        if (!window.confirm((dryRun ? "Dry-run add " : "Add ") + "\"" + sceneTitle(selected) + "\" as a variant of \"" + sceneTitle(scene) + "\"?")) return;
+        runPluginTask(TASKS.link, { mode: "link_variant", dryRun: dryRun, primarySceneId: String(scene.id), childSceneId: String(selected.id), label: label }).then(function (data) {
+          afterTask(data, dryRun);
         }).catch(alert);
       });
     }));
     actions.appendChild(button("Add This Under Another", function () {
       openSceneSearchModal("Add This Scene as Variant of Another Scene", function (selected) {
         var label = window.prompt("Variant label", "Variant") || "Variant";
-        if (!window.confirm("Make \"" + sceneTitle(scene) + "\" a variant of \"" + sceneTitle(selected) + "\"?")) return;
-        runPluginTask(TASKS.link, { mode: "link_variant", dryRun: false, primarySceneId: String(selected.id), childSceneId: String(scene.id), label: label }).then(function () {
-          window.location.reload();
+        var dryRun = uiDryRun();
+        if (!window.confirm((dryRun ? "Dry-run making " : "Make ") + "\"" + sceneTitle(scene) + "\" a variant of \"" + sceneTitle(selected) + "\"?")) return;
+        runPluginTask(TASKS.link, { mode: "link_variant", dryRun: dryRun, primarySceneId: String(selected.id), childSceneId: String(scene.id), label: label }).then(function (data) {
+          afterTask(data, dryRun);
         }).catch(alert);
       });
     }));
 
     if (cf.variant_role === "variant") {
       actions.appendChild(button("Unlink", function () {
-        if (!window.confirm("Unlink this variant? This does not delete files or scenes.")) return;
-        runPluginTask(TASKS.unlink, { mode: "unlink_variant", dryRun: false, childSceneId: String(scene.id) }).then(function () {
-          window.location.reload();
+        var dryRun = uiDryRun();
+        if (!window.confirm((dryRun ? "Dry-run unlink this variant?" : "Unlink this variant?") + " This does not delete files or scenes.")) return;
+        runPluginTask(TASKS.unlink, { mode: "unlink_variant", dryRun: dryRun, childSceneId: String(scene.id) }).then(function (data) {
+          afterTask(data, dryRun);
         }).catch(alert);
       }));
       actions.appendChild(button("Promote", function () {
-        if (!window.confirm("Promote this variant to primary? This does not delete files or scenes.")) return;
-        runPluginTask(TASKS.promote, { mode: "promote_variant", dryRun: false, childSceneId: String(scene.id) }).then(function () {
-          window.location.reload();
+        var dryRun = uiDryRun();
+        if (!window.confirm((dryRun ? "Dry-run promote this variant to primary?" : "Promote this variant to primary?") + " This does not delete files or scenes.")) return;
+        runPluginTask(TASKS.promote, { mode: "promote_variant", dryRun: dryRun, childSceneId: String(scene.id) }).then(function (data) {
+          afterTask(data, dryRun);
         }).catch(alert);
       }));
     }

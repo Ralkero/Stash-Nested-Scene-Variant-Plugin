@@ -23,6 +23,7 @@ Current mock coverage:
 - graph validation scans beyond the normal bulk auto-tag discovery limit
 - rollback scans all variant pages and preserves unrelated scene metadata
 - the UI task runner includes the actual Stash plugin ID from `scene-metadata-variants-v1.yml`
+- the UI exposes a persistent dry-run mode and does not force live writes
 
 ## Manual Verification In Stash
 
@@ -80,9 +81,10 @@ The `Scene.Create.Post` hook defaults to dry-run. Add one test scene through nor
 
 1. Open the primary scene page.
 2. Confirm the `Variants` panel lists linked variants.
-3. Click a variant and confirm it navigates to that scene page.
-4. Open the child scene page.
-5. Confirm the panel shows a primary link and sibling list.
+3. Confirm the `Dry run` checkbox is checked by default.
+4. Click a variant and confirm it navigates to that scene page.
+5. Open the child scene page.
+6. Confirm the panel shows a primary link and sibling list.
 
 ### Scene Card Badge
 

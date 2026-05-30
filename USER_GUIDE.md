@@ -49,6 +49,8 @@ The plugin always reads the current scene first and sends merged final `groups` 
 
 Open a scene page and use the `Variants` panel.
 
+The panel has a `Dry run` checkbox that is enabled by default. Leave it checked to queue a preview task and inspect the Stash task log. Uncheck it only when you are ready to apply the relationship.
+
 For a normal scene:
 
 - `Add Existing Scene` links another scene under the current scene.

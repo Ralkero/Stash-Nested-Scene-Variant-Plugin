@@ -348,6 +348,8 @@ test("UI task runner includes the Stash manifest plugin id", () => {
   const pluginIdsLine = uiSource.split(/\r?\n/).find(line => line.includes("var PLUGIN_IDS")) || "";
   assert.ok(pluginIdsLine.includes("\"scene-metadata-variants-v1\""), "UI must try the actual manifest filename plugin ID");
   assert.ok(pluginIdsLine.indexOf("\"scene-metadata-variants-v1\"") < pluginIdsLine.indexOf("\"stash-scene-metadata-variants-v1\""), "actual plugin ID should be attempted first");
+  assert.ok(uiSource.includes("scene-metadata-variants-ui-dry-run"), "UI should expose a persistent dry-run mode");
+  assert.ok(!uiSource.includes("dryRun: false"), "UI actions should not force live writes");
 });
 
 let failed = 0;
