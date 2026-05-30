@@ -93,11 +93,20 @@ V1 limitation: Stash UI patching is experimental, so the badge is best-effort DO
 
 `Validate variant graph` and `Rollback variant data` use `variantScanLimit`, not `sceneDiscoveryLimit`. The default `variantScanLimit=0` means scan all pages returned by Stash. Set a positive limit only when you intentionally want a bounded maintenance run.
 
-## Live Schema Checks Still Needed
+## Live Schema Checks
 
-Before calling V1 fully production-verified, confirm in the target Stash v0.31.1 instance:
+Checked against the local Stash v0.31.1 GraphQL endpoint on 2026-05-29:
 
-- `SceneUpdateInput.custom_fields.partial` accepts this plugin's values
-- `variant_children` as JSON string is accepted
-- `runPluginTask` accepts `args_map` from UI GraphQL
-- plugin settings are passed as expected or task args are used
+- `SceneUpdateInput.custom_fields` exists
+- `CustomFieldsInput` exposes `full`, `partial`, and `remove`
+- `SceneGroupInput` exposes `group_id` and `scene_index`
+- `runPluginTask` accepts `args_map`
+- the plugin loads with ID `scene-metadata-variants-v1`
+- dry-run `Validate variant graph` completed as job `5` with status `FINISHED`
+
+Still verify manually in the UI before calling the V1 fully production-proven:
+
+- the `Variants` panel appears on scene pages after a browser refresh
+- the scene-card badge attaches correctly in your current Stash theme
+- a dry-run `Link variant` task shows the expected primary/child IDs
+- a small real `Link variant` run writes the expected custom fields and helper tag

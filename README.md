@@ -23,7 +23,7 @@ The plugin uses an embedded JavaScript task/hook engine plus a UI JavaScript pan
 
 ## V1 Status
 
-This V1 is implemented and mock-tested. Live Stash v0.31.1 schema introspection has not yet been run in this workspace, so install first with `dryRun: true` and verify in the GraphQL/task logs before live writes.
+This V1 is implemented, mock-tested, and smoke-tested against the local Stash v0.31.1 GraphQL endpoint. The live schema check confirmed `custom_fields.partial/remove`, `SceneGroupInput`, and `runPluginTask(args_map)`. A dry-run `Validate variant graph` task also completed successfully. Still do first real metadata or variant writes on a small selected set with `dryRun: true`.
 
 The manifest is intentionally named `scene-metadata-variants-v1.yml` because Stash uses the YAML filename as the plugin ID. A generic `plugin.yml` filename can collide with other manually installed plugins.
 

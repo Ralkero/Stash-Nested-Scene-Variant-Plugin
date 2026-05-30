@@ -8,7 +8,7 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Embedded JavaScript task/hook engine.
 - [x] UI JavaScript/CSS assets.
 - [x] Documentation: install, testing, user guide, rollback.
-- [ ] Live Stash v0.31.1 schema introspection verified.
+- [x] Live Stash v0.31.1 schema introspection verified.
 
 ## Auto-Tagger
 
@@ -59,4 +59,4 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Unlink removes plugin fields and preserves metadata.
 - [x] Self-link and primary-as-child are rejected.
 - [x] Validation detects graph errors.
-- [ ] Manual verification in live Stash v0.31.1.
+- [ ] Manual UI and small real-write verification in live Stash v0.31.1.
