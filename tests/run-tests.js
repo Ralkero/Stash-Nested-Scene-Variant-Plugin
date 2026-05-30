@@ -1,4 +1,6 @@
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 const plugin = require("../scene-metadata-variants.js");
 
 function clone(value) {
@@ -339,6 +341,13 @@ test("rollbackVariantData scans all pages and preserves unrelated metadata", () 
   assert.strictEqual(db.scenes["75"].custom_fields.variant_parent_id, undefined);
   assert.strictEqual(db.scenes["75"].custom_fields.keep_me, "yes");
   assert.deepStrictEqual(db.scenes["75"].tag_ids, ["31"]);
+});
+
+test("UI task runner includes the Stash manifest plugin id", () => {
+  const uiSource = fs.readFileSync(path.join(__dirname, "..", "ui", "scene-variants.js"), "utf8");
+  const pluginIdsLine = uiSource.split(/\r?\n/).find(line => line.includes("var PLUGIN_IDS")) || "";
+  assert.ok(pluginIdsLine.includes("\"scene-metadata-variants-v1\""), "UI must try the actual manifest filename plugin ID");
+  assert.ok(pluginIdsLine.indexOf("\"scene-metadata-variants-v1\"") < pluginIdsLine.indexOf("\"stash-scene-metadata-variants-v1\""), "actual plugin ID should be attempted first");
 });
 
 let failed = 0;

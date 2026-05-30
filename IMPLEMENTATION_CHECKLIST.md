@@ -47,6 +47,7 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Unlink and promote buttons.
 - [x] Navigation-first variant selector.
 - [x] Best-effort scene card variant badge.
+- [x] UI task runner uses the actual Stash manifest plugin ID.
 - [x] Document saved-filter hiding workflow.
 - [x] Document V1 UI limitations.
 
@@ -59,4 +60,7 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Unlink removes plugin fields and preserves metadata.
 - [x] Self-link and primary-as-child are rejected.
 - [x] Validation detects graph errors.
+- [x] Live dry-run validate task completed through Stash.
+- [x] Live dry-run link task completed through Stash without changing tested scenes.
+- [x] Stash exposes plugin UI JS/CSS asset endpoints.
 - [ ] Manual UI and small real-write verification in live Stash v0.31.1.

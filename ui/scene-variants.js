@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var PLUGIN_IDS = ["stash-scene-metadata-variants-v1", "scene-metadata-variants", "Scene Metadata Variants"];
+  var PLUGIN_IDS = ["scene-metadata-variants-v1", "stash-scene-metadata-variants-v1", "scene-metadata-variants", "Scene Metadata Variants"];
   var TASKS = {
     link: "Link variant",
     unlink: "Unlink variant",

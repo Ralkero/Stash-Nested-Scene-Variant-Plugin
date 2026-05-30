@@ -22,6 +22,7 @@ Current mock coverage:
 - graph validation reports a child missing from its parent
 - graph validation scans beyond the normal bulk auto-tag discovery limit
 - rollback scans all variant pages and preserves unrelated scene metadata
+- the UI task runner includes the actual Stash plugin ID from `scene-metadata-variants-v1.yml`
 
 ## Manual Verification In Stash
 
@@ -103,10 +104,11 @@ Checked against the local Stash v0.31.1 GraphQL endpoint on 2026-05-29:
 - `runPluginTask` accepts `args_map`
 - the plugin loads with ID `scene-metadata-variants-v1`
 - dry-run `Validate variant graph` completed as job `5` with status `FINISHED`
+- dry-run `Link variant` completed as job `6` with status `FINISHED`, and scenes `2110` and `2109` remained unchanged afterward
+- Stash exposes the UI assets at `/plugin/scene-metadata-variants-v1/javascript` and `/plugin/scene-metadata-variants-v1/css`
 
 Still verify manually in the UI before calling the V1 fully production-proven:
 
 - the `Variants` panel appears on scene pages after a browser refresh
 - the scene-card badge attaches correctly in your current Stash theme
-- a dry-run `Link variant` task shows the expected primary/child IDs
 - a small real `Link variant` run writes the expected custom fields and helper tag
