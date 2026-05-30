@@ -11,7 +11,7 @@ The plugin uses an embedded JavaScript task/hook engine plus a UI JavaScript pan
 
 - `scene-metadata-variants-v1.yml` - Stash plugin manifest, settings, tasks, hook, UI assets
 - `scene-metadata-variants.js` - embedded JS task/hook engine
-- `ui/scene-variants.js` - scene-page panel and best-effort scene-card badge UI
+- `ui/scene-variants.js` - scene-page panel, scene-card variant dropdown, and nested-variant visibility toggle
 - `ui/scene-variants.css` - UI styling
 - `tests/run-tests.js` - mock GraphQL test harness
 - `examples/aliases.example.json` - sample alias map shape for task args or future embedded seeds
@@ -20,10 +20,13 @@ The plugin uses an embedded JavaScript task/hook engine plus a UI JavaScript pan
 - `TESTING.md` - test and manual verification steps
 - `USER_GUIDE.md` - user-facing workflow guide
 - `ROLLBACK.md` - rollback and recovery procedures
+- `CHANGELOG.md` - release notes
 
 ## V1 Status
 
 This V1 is implemented, mock-tested, and smoke-tested against the local Stash v0.31.1 GraphQL endpoint. The live schema check confirmed `custom_fields.partial/remove`, `SceneGroupInput`, `runPluginTask(args_map)`, and Stash's embedded `input.Args` casing. Dry-run validate/link tasks completed successfully, and a real link/unlink smoke test wrote and then removed variant custom fields on scenes `2110` and `2109`. Still use `dryRun: true` first for new workflows or larger batches.
+
+The scene-page `Variants` panel is only mounted on exact scene-player routes such as `/scenes/123`. It is removed when returning to browsing pages. Scene browsing cards use a footer dropdown next to the normal Tags/Groups indicators; the old thumbnail-corner `N variants` badge has been removed. Nested child variants are hidden from scene browsing by default, with a best-effort `Show nested variants` toggle injected into the Scenes toolbar ellipsis menu.
 
 The manifest is intentionally named `scene-metadata-variants-v1.yml` because Stash uses the YAML filename as the plugin ID. A generic `plugin.yml` filename can collide with other manually installed plugins.
 

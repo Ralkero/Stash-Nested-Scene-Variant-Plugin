@@ -46,10 +46,14 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 ## UI
 
 - [x] Scene page Variants panel.
+- [x] Scene page panel only appears on exact scene-player pages and is removed on browse pages.
 - [x] Manual add-as-variant workflow using scene ID input.
 - [x] Unlink and promote buttons.
 - [x] Navigation-first variant selector.
-- [x] Best-effort scene card variant badge.
+- [x] Best-effort scene card footer variant dropdown beside Tags/Groups indicators.
+- [x] Thumbnail-corner variant badge removed.
+- [x] Nested child variant cards hidden by default on scene browsing pages.
+- [x] Best-effort toolbar ellipsis toggle to show/hide nested variants.
 - [x] UI task runner uses the actual Stash manifest plugin ID.
 - [x] UI variant actions default to dry-run through a visible toggle.
 - [x] Document saved-filter hiding workflow.

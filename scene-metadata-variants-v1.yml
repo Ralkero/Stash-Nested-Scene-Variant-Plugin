@@ -1,6 +1,6 @@
 name: Scene Metadata Variants
 description: Stash v0.31.1 plugin for custom auto-tagging and scene variant nesting.
-version: 0.1.7
+version: 0.1.8
 interface: js
 exec:
   - scene-metadata-variants.js

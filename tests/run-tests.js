@@ -390,6 +390,11 @@ test("UI task runner includes the Stash manifest plugin id", () => {
   assert.ok(pluginIdsLine.indexOf("\"scene-metadata-variants-v1\"") < pluginIdsLine.indexOf("\"stash-scene-metadata-variants-v1\""), "actual plugin ID should be attempted first");
   assert.ok(uiSource.includes("scene-metadata-variants-ui-dry-run"), "UI should expose a persistent dry-run mode");
   assert.ok(!uiSource.includes("dryRun: false"), "UI actions should not force live writes");
+  assert.ok(uiSource.includes("scene-metadata-variants-show-nested"), "UI should persist the show/hide nested variants preference");
+  assert.ok(uiSource.includes("smv-hidden-variant-card"), "UI should hide child variant cards by default");
+  assert.ok(uiSource.includes("smv-card-variant-menu"), "UI should render the card footer variants menu");
+  assert.ok(!uiSource.includes("smv-card-badge"), "old thumbnail-corner variant badge should not be rendered");
+  assert.ok(uiSource.includes("removePanel()"), "scene page panel should be removed when leaving a scene route");
 });
 
 function runEmbeddedEntrypointSmoke(contextExtras) {

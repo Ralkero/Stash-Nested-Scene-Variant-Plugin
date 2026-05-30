@@ -47,7 +47,7 @@ The plugin always reads the current scene first and sends merged final `groups` 
 
 ## Linking Variants From The UI
 
-Open a scene page and use the `Variants` panel.
+Open a scene page and use the `Variants` panel. The panel is only shown on exact scene-player pages, and it should disappear when you return to the scene browsing grid.
 
 The panel has a `Dry run` checkbox that is enabled by default. Leave it checked to queue a preview task and inspect the Stash task log. Uncheck it only when you are ready to apply the relationship.
 
@@ -69,6 +69,12 @@ For a child variant:
 - `Promote` makes the child the new primary for the set
 
 Every destructive-looking action asks for confirmation. These operations only change Stash metadata and plugin-owned custom fields.
+
+## Browsing Variants
+
+On the scene browsing page, primary scenes with linked variants show a small chain-link dropdown beside the normal Tags and Groups indicators below the thumbnail. Open it to see the linked variants, then choose one to navigate to that scene.
+
+Nested child variants are hidden from the scene browsing page by default. To temporarily show them, open the Scenes toolbar ellipsis menu and use `Show nested variants`. The setting is stored in your browser local storage.
 
 ## Linking Variants From Tasks
 
@@ -128,13 +134,17 @@ The plugin does not allow:
 
 ## Hiding Child Variants
 
-V1 uses the `Variant Hidden` helper tag. Create a saved filter on the Scenes page that excludes this tag, then set that saved filter as your default.
+V1 uses two layers for hiding child variants:
+
+- The UI script hides nested variant cards by default when it can read plugin variant metadata.
+- The `Variant Hidden` helper tag can still be used for a Stash-native saved filter.
+
+For the most reliable long-term setup, create a saved filter on the Scenes page that excludes the `Variant Hidden` tag, then set that saved filter as your default.
 
 This is safer than relying on deprecated default-filter mutations or fragile UI filtering patches.
 
 ## Known V1 Limitations
 
-- Scene card badges are best-effort DOM overlays and may need adjustment if Stash changes its card markup.
+- Scene card dropdowns and the toolbar toggle are best-effort DOM integrations and may need adjustment if Stash changes its card or toolbar markup.
 - The scene search modal is intentionally simple in V1, but it supports title/path text search and pasted scene IDs.
 - Inline player swapping is not implemented. Clicking variants navigates to their normal scene pages.
-- Live Stash v0.31.1 introspection still needs to verify exact schema behavior on the target instance.

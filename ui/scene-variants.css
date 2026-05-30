@@ -63,19 +63,90 @@
   cursor: default;
 }
 
-.smv-card-badge {
-  position: absolute;
-  right: 6px;
-  top: 6px;
-  z-index: 5;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.76);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+.smv-hidden-variant-card {
+  display: none !important;
+}
+
+.smv-card-variant-menu {
+  align-items: center;
+  display: inline-flex;
+  margin-left: 8px;
+  position: relative;
+  vertical-align: middle;
+  z-index: 8;
+}
+
+.smv-variant-trigger {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #f2f5f7;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 4px;
   line-height: 1;
-  padding: 4px 6px;
-  pointer-events: none;
+  padding: 0 2px;
+}
+
+.smv-variant-trigger:hover,
+.smv-card-variant-menu.is-open .smv-variant-trigger {
+  color: #ffffff;
+}
+
+.smv-chain-icon {
+  height: 14px;
+  width: 14px;
+}
+
+.smv-variant-count {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.smv-variant-dropdown {
+  background: #243743;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
+  color: #f2f5f7;
+  display: none;
+  left: 0;
+  min-width: 210px;
+  padding: 6px;
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 10000;
+}
+
+.smv-card-variant-menu.is-open .smv-variant-dropdown {
+  display: grid;
+  gap: 4px;
+}
+
+.smv-variant-option,
+.smv-show-nested-toggle {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: #f2f5f7;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  padding: 7px 9px;
+  text-align: left;
+  width: 100%;
+}
+
+.smv-variant-option:hover,
+.smv-show-nested-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.smv-variant-empty {
+  color: #b8c3cc;
+  font-size: 12px;
+  padding: 7px 9px;
 }
 
 .smv-modal-backdrop {

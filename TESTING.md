@@ -27,6 +27,9 @@ Current mock coverage:
 - rollback scans all variant pages and preserves unrelated scene metadata
 - the UI task runner includes the actual Stash plugin ID from `scene-metadata-variants-v1.yml`
 - the UI exposes a persistent dry-run mode and does not force live writes
+- the scene page panel is removed outside exact scene-player routes
+- the scene browsing UI exposes a footer variant dropdown and no longer renders the old thumbnail-corner badge
+- nested variant card hiding and the show/hide toggle hooks are present in the UI bundle
 
 ## Manual Verification In Stash
 
@@ -88,12 +91,20 @@ The `Scene.Create.Post` hook defaults to dry-run. Add one test scene through nor
 4. Click a variant and confirm it navigates to that scene page.
 5. Open the child scene page.
 6. Confirm the panel shows a primary link and sibling list.
+7. Return to the Scenes browsing page.
+8. Confirm the scene-page `Variants` panel disappears.
 
-### Scene Card Badge
+### Scene Card Variant Dropdown
 
-Refresh the Scenes page after linking variants. Primary scene cards should show a small `N variants` badge when the DOM structure allows the UI script to attach it.
+Refresh the Scenes page after linking variants. Primary scene cards should show a small chain-link dropdown beside the normal Tags and Groups indicators below the thumbnail. Open the dropdown and confirm each child variant is listed and navigates to the correct scene.
 
-V1 limitation: Stash UI patching is experimental, so the badge is best-effort DOM integration rather than a guaranteed React component patch. The authoritative hiding mechanism is the `Variant Hidden` saved filter.
+The old thumbnail-corner `N variants` badge should not appear.
+
+### Nested Variant Visibility Toggle
+
+By default, child variant cards should be hidden on the Scenes browsing page. Open the toolbar ellipsis menu and use `Show nested variants`; child variant cards should appear. Toggle it again and they should hide.
+
+V1 limitation: Stash UI patching is experimental, so the dropdown and toolbar toggle are best-effort DOM integrations rather than guaranteed React component patches. The authoritative fallback hiding mechanism is the `Variant Hidden` saved filter.
 
 ### Variant Maintenance Scan
 
@@ -119,5 +130,6 @@ Checked against the local Stash v0.31.1 GraphQL endpoint on 2026-05-29:
 Still verify manually in the UI before calling the V1 fully production-proven:
 
 - the `Variants` panel appears on scene pages after a browser refresh
-- the scene-card badge attaches correctly in your current Stash theme
+- the scene-card variant dropdown attaches beside the Tags and Groups indicators in your current Stash theme
+- nested variant cards hide by default and can be shown from the toolbar ellipsis menu
 - the UI dry-run checkbox queues a dry-run task before applying a relationship

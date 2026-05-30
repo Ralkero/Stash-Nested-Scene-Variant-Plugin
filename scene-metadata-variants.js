@@ -18,7 +18,7 @@
 var SceneMetadataVariants = (function () {
   "use strict";
 
-  var VERSION = "0.1.7";
+  var VERSION = "0.1.8";
   var PLUGIN_ID = "stash-scene-metadata-variants-v1";
 
   var DEFAULT_CONFIG = {

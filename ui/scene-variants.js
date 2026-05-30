@@ -3,6 +3,7 @@
 
   var PLUGIN_IDS = ["scene-metadata-variants-v1", "stash-scene-metadata-variants-v1", "scene-metadata-variants", "Scene Metadata Variants"];
   var DRY_RUN_KEY = "scene-metadata-variants-ui-dry-run";
+  var SHOW_NESTED_KEY = "scene-metadata-variants-show-nested";
   var TASKS = {
     link: "Link variant",
     unlink: "Unlink variant",
@@ -27,7 +28,7 @@
   }
 
   function sceneIdFromLocation() {
-    var m = window.location.pathname.match(/\/scenes?\/(\d+)/);
+    var m = window.location.pathname.match(/(?:^|\/)scenes?\/(\d+)\/?$/);
     return m ? m[1] : null;
   }
 
@@ -136,6 +137,14 @@
       return;
     }
     window.location.reload();
+  }
+
+  function showNestedVariants() {
+    return window.localStorage.getItem(SHOW_NESTED_KEY) === "true";
+  }
+
+  function setShowNestedVariants(value) {
+    window.localStorage.setItem(SHOW_NESTED_KEY, value ? "true" : "false");
   }
 
   function variantStatus(scene) {
@@ -310,6 +319,11 @@
     target.insertBefore(panel, target.firstChild);
   }
 
+  function removePanel() {
+    var old = document.querySelector(".smv-panel");
+    if (old) old.remove();
+  }
+
   function loadRelated(scene) {
     var cf = customFields(scene);
     if (cf.variant_role === "primary") {
@@ -329,7 +343,10 @@
 
   function setupScenePage() {
     var id = sceneIdFromLocation();
-    if (!id) return;
+    if (!id) {
+      removePanel();
+      return;
+    }
     findScene(id).then(function (scene) {
       if (!scene) return;
       return loadRelated(scene).then(function (related) {
@@ -345,38 +362,189 @@
     return m ? m[1] : null;
   }
 
-  function addBadgeToCard(anchor, scene) {
-    var cf = customFields(scene);
-    var count = variantChildren(scene).length;
-    if (cf.variant_role !== "primary" || !count) return;
-    var card = anchor.closest(".scene-card") || anchor.closest(".card") || anchor.parentElement;
-    if (!card || card.querySelector(".smv-card-badge")) return;
-    var badge = el("span", "smv-card-badge", count + " variants");
-    card.appendChild(badge);
+  function cardForAnchor(anchor) {
+    return anchor.closest(".scene-card") ||
+      anchor.closest(".scene-card-container") ||
+      anchor.closest(".card") ||
+      anchor.closest("[class*='scene-card']") ||
+      anchor.parentElement;
   }
 
-  function setupCardBadges() {
+  function cardFooter(card) {
+    if (!card) return null;
+    var selectors = [
+      ".scene-card-footer",
+      ".scene-card__footer",
+      ".scene-card-details",
+      ".scene-card__details",
+      ".scene-card-info",
+      ".scene-card__info",
+      ".card-footer",
+      ".card-body"
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+      var found = card.querySelector(selectors[i]);
+      if (found) return found;
+    }
+    return card;
+  }
+
+  function chainIcon() {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("class", "smv-chain-icon");
+    var p1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p1.setAttribute("d", "M10.5 13.5 13.5 10.5");
+    var p2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p2.setAttribute("d", "M8.6 15.4 7.4 16.6a3.2 3.2 0 0 1-4.5-4.5l3.2-3.2a3.2 3.2 0 0 1 4.5 0l.7.7");
+    var p3 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p3.setAttribute("d", "M15.4 8.6 16.6 7.4a3.2 3.2 0 0 1 4.5 4.5l-3.2 3.2a3.2 3.2 0 0 1-4.5 0l-.7-.7");
+    [p1, p2, p3].forEach(function (path) {
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "currentColor");
+      path.setAttribute("stroke-width", "2");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  function closeVariantMenus() {
+    Array.prototype.forEach.call(document.querySelectorAll(".smv-card-variant-menu.is-open"), function (node) {
+      node.classList.remove("is-open");
+    });
+  }
+
+  function fillVariantMenu(menu, scene) {
+    if (menu.getAttribute("data-loaded") === "true") return;
+    var dropdown = menu.querySelector(".smv-variant-dropdown");
+    dropdown.textContent = "Loading...";
+    Promise.all(variantChildren(scene).map(findScene)).then(function (children) {
+      dropdown.innerHTML = "";
+      children.filter(Boolean).forEach(function (child) {
+        var item = el("button", "smv-variant-option", (customFields(child).variant_label || "Variant") + ": " + sceneTitle(child));
+        item.type = "button";
+        item.addEventListener("click", function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          goScene(child.id);
+        });
+        dropdown.appendChild(item);
+      });
+      if (!dropdown.children.length) dropdown.appendChild(el("div", "smv-variant-empty", "No variants found"));
+      menu.setAttribute("data-loaded", "true");
+    }).catch(function () {
+      dropdown.textContent = "Variant list failed";
+    });
+  }
+
+  function applyVariantVisibility(card, scene) {
+    if (!card) return;
+    var isChild = customFields(scene).variant_role === "variant";
+    if (isChild && !showNestedVariants()) {
+      card.classList.add("smv-hidden-variant-card");
+      card.setAttribute("data-smv-hidden-variant", "true");
+    } else {
+      card.classList.remove("smv-hidden-variant-card");
+      if (card.getAttribute("data-smv-hidden-variant") === "true") card.removeAttribute("data-smv-hidden-variant");
+    }
+  }
+
+  function addVariantMenuToCard(anchor, scene) {
+    var cf = customFields(scene);
+    var count = variantChildren(scene).length;
+    var card = cardForAnchor(anchor);
+    if (!card) return;
+    applyVariantVisibility(card, scene);
+    if (cf.variant_role !== "primary" || !count || card.querySelector(".smv-card-variant-menu")) return;
+    var footer = cardFooter(card);
+    var menu = el("span", "smv-card-variant-menu");
+    var trigger = el("button", "smv-variant-trigger");
+    trigger.type = "button";
+    trigger.title = count + " variants";
+    trigger.appendChild(chainIcon());
+    trigger.appendChild(el("span", "smv-variant-count", String(count)));
+    var dropdown = el("div", "smv-variant-dropdown");
+    dropdown.setAttribute("role", "menu");
+    menu.appendChild(trigger);
+    menu.appendChild(dropdown);
+    trigger.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      var opening = !menu.classList.contains("is-open");
+      closeVariantMenus();
+      if (opening) {
+        menu.classList.add("is-open");
+        fillVariantMenu(menu, scene);
+      }
+    });
+    footer.appendChild(menu);
+  }
+
+  function setupCardVariantMenus() {
+    if (sceneIdFromLocation()) return;
     var anchors = Array.prototype.slice.call(document.querySelectorAll("a[href*='/scene']"));
     anchors.slice(0, 80).forEach(function (a) {
       var id = sceneIdFromHref(a.getAttribute("href"));
       if (!id || cache[id] === "loading") return;
       if (cache[id]) {
-        addBadgeToCard(a, cache[id]);
+        addVariantMenuToCard(a, cache[id]);
         return;
       }
       cache[id] = "loading";
       findScene(id).then(function (scene) {
         cache[id] = scene;
-        addBadgeToCard(a, scene);
+        addVariantMenuToCard(a, scene);
       }).catch(function () {
         cache[id] = null;
       });
     });
   }
 
+  function toggleNestedVariantVisibility() {
+    setShowNestedVariants(!showNestedVariants());
+    setupCardVariantMenus();
+  }
+
+  function menuText() {
+    return showNestedVariants() ? "Hide nested variants" : "Show nested variants";
+  }
+
+  function injectEllipsisMenuToggle(root) {
+    var containers = Array.prototype.slice.call((root || document).querySelectorAll(".dropdown-menu, [role='menu'], .popover, .modal, .btn-group.open, .show"));
+    containers.forEach(function (container) {
+      if (!container || container.querySelector(".smv-show-nested-toggle")) return;
+      var item = el("button", "smv-show-nested-toggle", menuText());
+      item.type = "button";
+      item.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleNestedVariantVisibility();
+        item.textContent = menuText();
+      });
+      container.appendChild(item);
+    });
+  }
+
+  function setupToolbarToggleWatcher() {
+    document.addEventListener("click", function (event) {
+      var target = event.target;
+      var button = target && target.closest && target.closest("button, .btn, [role='button']");
+      if (!button) return;
+      var text = (button.textContent || "").trim();
+      var label = button.getAttribute("aria-label") || button.getAttribute("title") || "";
+      if (text === "..." || text === "\u2026" || /more|options|ellipsis/i.test(label)) {
+        setTimeout(function () { injectEllipsisMenuToggle(document); }, 80);
+        setTimeout(function () { injectEllipsisMenuToggle(document); }, 250);
+      }
+    }, true);
+  }
+
   function refresh() {
     setupScenePage();
-    setupCardBadges();
+    setupCardVariantMenus();
   }
 
   function start() {
@@ -387,9 +555,11 @@
       });
     }
     var observer = new MutationObserver(function () {
-      setupCardBadges();
+      setupCardVariantMenus();
     });
     observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("click", function () { closeVariantMenus(); });
+    setupToolbarToggleWatcher();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);

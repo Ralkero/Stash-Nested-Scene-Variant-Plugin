@@ -50,6 +50,8 @@ ui/scene-variants.css
 
 After reload, open a scene page. A compact `Variants` panel should appear near the scene content. If it does not appear, check the browser console and Stash plugin reload logs.
 
+On the Scenes browsing page, primary scene cards with variants should show a small chain-link dropdown beside the normal Tags and Groups indicators. Child variant cards are hidden by default; open the toolbar ellipsis menu and use `Show nested variants` to toggle them temporarily.
+
 ## Saved Filter For Hidden Variants
 
 V1 uses the helper tag `Variant Hidden` to hide child variants from normal browsing.
