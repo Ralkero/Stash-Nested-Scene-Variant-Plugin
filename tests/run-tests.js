@@ -1,6 +1,7 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 const plugin = require("../scene-metadata-variants.js");
 
 function clone(value) {
@@ -225,6 +226,45 @@ test("real auto-tag merges existing groups and tags", () => {
   assert.deepStrictEqual(db.scenes["1"].tag_ids.sort(), ["30", "31"]);
 });
 
+test("dispatch honors Stash input.args config for live variant tasks", () => {
+  const db = makeDb(baseSeed());
+  const runtime = makeRuntime(db);
+  const result = plugin.dispatch({
+    args: {
+      mode: "link_variant",
+      dryRun: false,
+      createMissingTags: true,
+      primarySceneId: "2",
+      childSceneId: "3",
+      label: "Wrapped Args"
+    }
+  }, runtime);
+  assert.strictEqual(result.result, "linked");
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_role, "primary");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_role, "variant");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_label, "Wrapped Args");
+  assert.ok(db.scenes["3"].tag_ids.includes("32"), "wrapped args dryRun=false should allow hidden tag write");
+});
+
+test("dispatch honors Stash input.Args config casing from v0.31.1", () => {
+  const db = makeDb(baseSeed());
+  const runtime = makeRuntime(db);
+  const result = plugin.dispatch({
+    Args: {
+      mode: "link_variant",
+      dryRun: false,
+      createMissingTags: true,
+      primarySceneId: "2",
+      childSceneId: "3",
+      label: "Capital Args"
+    }
+  }, runtime);
+  assert.strictEqual(result.result, "linked");
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_role, "primary");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_role, "variant");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_label, "Capital Args");
+});
+
 test("linkVariant updates parent and child and preserves child metadata", () => {
   const db = makeDb(baseSeed());
   const runtime = makeRuntime(db);
@@ -350,6 +390,41 @@ test("UI task runner includes the Stash manifest plugin id", () => {
   assert.ok(pluginIdsLine.indexOf("\"scene-metadata-variants-v1\"") < pluginIdsLine.indexOf("\"stash-scene-metadata-variants-v1\""), "actual plugin ID should be attempted first");
   assert.ok(uiSource.includes("scene-metadata-variants-ui-dry-run"), "UI should expose a persistent dry-run mode");
   assert.ok(!uiSource.includes("dryRun: false"), "UI actions should not force live writes");
+});
+
+function runEmbeddedEntrypointSmoke(contextExtras) {
+  const db = makeDb(baseSeed());
+  const runtime = makeRuntime(db);
+  const source = fs.readFileSync(path.join(__dirname, "..", "scene-metadata-variants.js"), "utf8");
+  const context = Object.assign({
+    console,
+    module: { exports: {} },
+    input: {
+      args: {
+        mode: "link_variant",
+        dryRun: false,
+        createMissingTags: true,
+        primarySceneId: "2",
+        childSceneId: "3",
+        label: "Vm Wrapped Args"
+      }
+    },
+    gql: runtime.gql,
+    log: { Info() {}, Progress() {} }
+  }, contextExtras || {});
+  const output = vm.runInNewContext(source, context);
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_role, "primary");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_role, "variant");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_label, "Vm Wrapped Args");
+  assert.ok(output && (output.result === "linked" || output.Output), "embedded script should leave task output as final value");
+}
+
+test("embedded script runs main in Stash-like context even when module exists", () => {
+  runEmbeddedEntrypointSmoke();
+});
+
+test("embedded script runs main when Stash exposes module and process-like globals", () => {
+  runEmbeddedEntrypointSmoke({ process: { versions: { node: "stash-goja" } } });
 });
 
 let failed = 0;

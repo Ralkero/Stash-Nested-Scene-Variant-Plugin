@@ -18,7 +18,7 @@
 var SceneMetadataVariants = (function () {
   "use strict";
 
-  var VERSION = "0.1.3";
+  var VERSION = "0.1.7";
   var PLUGIN_ID = "stash-scene-metadata-variants-v1";
 
   var DEFAULT_CONFIG = {
@@ -199,9 +199,18 @@ var SceneMetadataVariants = (function () {
     return Math.max(0, Math.min(1, n));
   }
 
-  function mergeConfig(args) {
+  function runtimeArgs(args) {
     var raw = args || {};
-    if (raw.args_map) raw = Object.assign({}, raw.args_map, raw);
+    var merged = {};
+    if (raw.Args && typeof raw.Args === "object") merged = Object.assign(merged, raw.Args);
+    if (raw.args && typeof raw.args === "object") merged = Object.assign(merged, raw.args);
+    if (raw.ArgsMap && typeof raw.ArgsMap === "object") merged = Object.assign(merged, raw.ArgsMap);
+    if (raw.args_map && typeof raw.args_map === "object") merged = Object.assign(merged, raw.args_map);
+    return Object.assign(merged, raw);
+  }
+
+  function mergeConfig(args) {
+    var raw = runtimeArgs(args);
     var fromConfig = parseJSONMaybe(raw.config, raw.config || {});
     var cfg = Object.assign({}, DEFAULT_CONFIG, raw, fromConfig || {});
     cfg.dryRun = coerceBool(cfg.dryRun, DEFAULT_CONFIG.dryRun);
@@ -230,8 +239,7 @@ var SceneMetadataVariants = (function () {
   }
 
   function sceneIdsFromArgs(args) {
-    var raw = args || {};
-    if (raw.args_map) raw = Object.assign({}, raw.args_map, raw);
+    var raw = runtimeArgs(args);
     var v = raw.scene_ids || raw.sceneIds || raw.scene_id || raw.sceneId;
     if (Array.isArray(v)) return uniq(v.map(String));
     if (typeof v === "number") return [String(v)];
@@ -240,11 +248,8 @@ var SceneMetadataVariants = (function () {
   }
 
   function getArg(args, key, fallback) {
-    var raw = args || {};
-    if (raw.args_map && raw.args_map[key] !== undefined) return raw.args_map[key];
-    if (raw[key] !== undefined) return raw[key];
-    if (raw.args && raw.args[key] !== undefined) return raw.args[key];
-    return fallback;
+    var raw = runtimeArgs(args);
+    return raw[key] !== undefined ? raw[key] : fallback;
   }
 
   function normalizeAliasMap(aliasMap) {
@@ -927,7 +932,8 @@ var SceneMetadataVariants = (function () {
     logLine("INFO", "START version=" + VERSION + " mode=" + mode + " dryRun=" + cfg.dryRun, runtime);
     if (mode === "bulk_auto_tag" || mode === "bulk") return bulkAutoTag(args, runtime);
     if (mode === "hook_create") {
-      var hookId = getArg(args, "id", null) || (args && args.hookContext && args.hookContext.id) || (args && args.args && args.args.id);
+      var hookContext = getArg(args, "hookContext", null) || getArg(args, "HookContext", null);
+      var hookId = getArg(args, "id", null) || (hookContext && hookContext.id);
       if (!hookId) throw new Error("Hook did not provide a scene id");
       return bulkAutoTag(Object.assign({}, args || {}, { scene_ids: [String(hookId)], dryRun: cfg.dryRun }), runtime);
     }
@@ -997,8 +1003,14 @@ var SceneMetadataVariants = (function () {
   };
 })();
 
-if (typeof module !== "undefined" && module.exports) {
+var SceneMetadataVariantsOutput;
+
+if (typeof module !== "undefined" && module.exports && typeof process !== "undefined" && process.versions && process.versions.node) {
   module.exports = SceneMetadataVariants;
-} else {
-  SceneMetadataVariants.main();
 }
+
+if (typeof input !== "undefined" || typeof gql !== "undefined") {
+  SceneMetadataVariantsOutput = SceneMetadataVariants.main();
+}
+
+SceneMetadataVariantsOutput;

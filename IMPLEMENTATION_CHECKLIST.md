@@ -22,6 +22,9 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Full-array merge before `sceneUpdate`.
 - [x] No metadata deletion or overwrite unless configured.
 - [x] Existing-object lookup before creation.
+- [x] Stash `input.Args`, `input.args`, `ArgsMap`, and `args_map` task config is normalized before dispatch.
+- [x] Embedded JS entrypoint runs in Stash even if a CommonJS-like `module` object exists.
+- [x] Embedded JS leaves the task result as the final evaluated value for Stash.
 
 ## Variants
 
@@ -63,5 +66,6 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Validation detects graph errors.
 - [x] Live dry-run validate task completed through Stash.
 - [x] Live dry-run link task completed through Stash without changing tested scenes.
+- [x] Live real link/unlink smoke test completed through Stash and returned tested scenes to their original state.
 - [x] Stash exposes plugin UI JS/CSS asset endpoints.
 - [ ] Manual UI and small real-write verification in live Stash v0.31.1.
