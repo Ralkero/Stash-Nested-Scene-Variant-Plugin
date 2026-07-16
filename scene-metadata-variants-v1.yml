@@ -1,6 +1,6 @@
-name: Scene Metadata Variants
-description: Stash v0.31.1 plugin for custom auto-tagging and scene variant nesting.
-version: 0.1.10
+name: Scene Variant Sets
+description: Discover, review, and manage related scene variants as explicit primary and child sets.
+version: 0.5.17
 interface: js
 exec:
   - scene-metadata-variants.js
@@ -61,77 +61,106 @@ settings:
   allowVariantMetadataOverwrite:
     displayName: Allow metadata overwrite during nesting
     type: BOOLEAN
+  variantDiscoveryDistance:
+    displayName: Variant discovery pHash distance (lower is stricter)
+    type: NUMBER
+  variantDiscoveryDurationDiff:
+    displayName: Variant discovery duration difference in seconds
+    type: NUMBER
+  variantDiscoveryLimit:
+    displayName: Variant discovery scan limit
+    type: NUMBER
+  variantFilenameHeuristics:
+    displayName: Bridge duplicate-supported scenes with filename evidence
+    type: BOOLEAN
+  variantMetadataHeuristics:
+    displayName: Enable metadata variant heuristics
+    type: BOOLEAN
+  variantAutoSuggestThreshold:
+    displayName: Variant auto-suggest threshold
+    type: NUMBER
+  variantReviewThreshold:
+    displayName: Variant review threshold
+    type: NUMBER
 
 tasks:
-  - name: Bulk auto-tag scenes
-    description: Backfill scene Studio/Groups/Tags using the custom franchise/artist/character mapping.
+  - name: "Variant Sets: Preview metadata backfill"
+    description: Legacy helper for previewing scene Studio/Groups/Tags from the bundled mappings.
     defaultArgs:
       mode: bulk_auto_tag
       dryRun: true
 
-  - name: Link variant
-    description: Link an existing child scene under a primary scene using custom_fields.
+  - name: "Variant Sets: Attach child scene"
+    description: Attach an existing child scene to a primary scene using plugin-owned custom fields.
     defaultArgs:
       mode: link_variant
       dryRun: true
 
-  - name: Unlink variant
-    description: Remove one child scene from its variant set.
+  - name: "Variant Sets: Detach child scene"
+    description: Detach one child scene from its variant set.
     defaultArgs:
       mode: unlink_variant
       dryRun: true
 
-  - name: Promote variant to primary
-    description: Promote a child variant to become the primary scene for its set.
+  - name: "Variant Sets: Make child primary"
+    description: Make a child scene the primary scene for its variant set.
     defaultArgs:
       mode: promote_variant
       dryRun: true
 
-  - name: Move variant to primary
-    description: Move an existing child variant under a different primary scene.
+  - name: "Variant Sets: Move child to another set"
+    description: Move an existing child scene under a different primary scene.
     defaultArgs:
       mode: move_variant
       dryRun: true
 
-  - name: Rename variant
-    description: Update a child variant label.
+  - name: "Variant Sets: Rename child label"
+    description: Update the display label of a child scene.
     defaultArgs:
       mode: rename_variant
       dryRun: true
 
-  - name: Reorder variants
-    description: Update child order for a primary scene.
+  - name: "Variant Sets: Reorder children"
+    description: Update child order within a variant set.
     defaultArgs:
       mode: reorder_variants
       dryRun: true
 
-  - name: Rebuild variant set
-    description: Reconcile one primary scene and its children from custom_fields.
+  - name: "Variant Sets: Reconcile one set"
+    description: Reconcile one primary scene and its children from plugin-owned custom fields.
     defaultArgs:
       mode: rebuild_variant_set
       dryRun: true
 
-  - name: Validate variant graph
-    description: Validate all variant relationships and optionally repair safe inconsistencies.
+  - name: "Variant Sets: Discover Candidate Variants"
+    description: Read-only discovery of likely scene families using Stash duplicate clusters and filename/metadata evidence.
+    defaultArgs:
+      mode: discover_variant_candidates
+      dryRun: true
+
+  - name: "Variant Sets: Process approved families"
+    description: Preview or create reviewed variant sets. Live creation requires confirmed=true.
+    defaultArgs:
+      mode: apply_variant_batch
+      dryRun: true
+
+  - name: "Variant Sets: Validate relationship graph"
+    description: Validate all plugin-owned variant relationships and optionally repair safe inconsistencies.
     defaultArgs:
       mode: validate_variant_graph
       dryRun: true
       fix: false
 
-  - name: Rollback variant data
-    description: Remove plugin-owned variant custom fields from scenes. Does not delete scenes.
+  - name: "Variant Sets: Remove plugin relationships"
+    description: Remove plugin-owned variant custom fields from scenes without deleting scenes or files.
     defaultArgs:
       mode: rollback_variants
       dryRun: true
 
-hooks:
-  - name: Auto-tag newly created scene
-    description: Dry-run auto-tag newly created scenes after re-fetching scene data by ID.
-    triggeredBy:
-      - Scene.Create.Post
-    defaultArgs:
-      mode: hook_create
-      dryRun: true
+# The scene-create post hook is intentionally not registered. Running GraphQL-heavy
+# embedded JavaScript from the create hook can stall Stash scan jobs while new
+# scene records are still being inserted. Use the manual dry-run bulk task after
+# scans/imports complete instead.
 
 ui:
   javascript:

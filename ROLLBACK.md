@@ -53,7 +53,7 @@ It does not remove:
 
 ## Unlink One Variant
 
-Use the `Unlink variant` task with:
+Use the `Variant Sets: Detach child scene` task with:
 
 ```text
 childSceneId=<child id>
@@ -68,7 +68,7 @@ Unlinking removes the child from the parent's `variant_children`, removes the ch
 
 If the wrong child was linked:
 
-1. Run `Unlink variant` for that child.
+1. Run `Variant Sets: Detach child scene` for that child.
 2. Confirm the child no longer has `variant_role=variant`.
 3. Confirm the parent no longer lists that child.
 4. Link the correct child.

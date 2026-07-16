@@ -1,6 +1,6 @@
 # V1 Implementation Checklist
 
-Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
+Authoritative behavior and release history are documented in `README.md`, `USER_GUIDE.md`, and `CHANGELOG.md`.
 
 ## Package
 
@@ -43,6 +43,18 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Add/remove `Variant Hidden` helper tag additively.
 - [x] Prevent self-links, circular links, duplicate child IDs, and multi-level nesting.
 
+## Nested Scene Variants V2
+
+- [x] Read-only candidate discovery task.
+- [x] Stash `findDuplicateScenes(distance, duration_diff)` seed ingestion.
+- [x] Filename variant-token heuristics.
+- [x] Metadata overlap scoring.
+- [x] Deterministic proposed-primary selection.
+- [x] `auto_suggest` / `review` / `ignore` classification.
+- [x] Browser-local review draft persistence.
+- [x] Batch dry-run preview before live apply.
+- [x] Live batch apply requires explicit confirmation and reuses V1 variant link operations.
+
 ## UI
 
 - [x] Scene page Variants panel.
@@ -58,6 +70,8 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] UI variant actions default to dry-run through a visible toggle.
 - [x] Document saved-filter hiding workflow.
 - [x] Document V1 UI limitations.
+- [x] V2 candidate review modal.
+- [x] V2 browse/scene-page discovery entry points.
 
 ## Verification
 
@@ -72,4 +86,5 @@ Authoritative spec: `C:\Users\jmswo\Downloads\Nested Scene Variant Plugin.md`
 - [x] Live dry-run link task completed through Stash without changing tested scenes.
 - [x] Live real link/unlink smoke test completed through Stash and returned tested scenes to their original state.
 - [x] Stash exposes plugin UI JS/CSS asset endpoints.
+- [x] Mock coverage for V2 discovery, scoring, fallback, dry-run batch, and confirmed live apply.
 - [ ] Manual UI and small real-write verification in live Stash v0.31.1.

@@ -18,8 +18,8 @@
 var SceneMetadataVariants = (function () {
   "use strict";
 
-  var VERSION = "0.1.10";
-  var PLUGIN_ID = "stash-scene-metadata-variants-v1";
+  var VERSION = "0.5.17";
+  var PLUGIN_ID = "scene-metadata-variants-v1";
 
   var DEFAULT_CONFIG = {
     dryRun: true,
@@ -43,7 +43,14 @@ var SceneMetadataVariants = (function () {
     copyPrimaryGroupsToVariantIfMissing: true,
     copyPrimaryTagsToVariantIfMissing: false,
     allowVariantMetadataOverwrite: false,
-    variantChildrenStorage: "json"
+    variantChildrenStorage: "json",
+    variantDiscoveryDistance: 4,
+    variantDiscoveryDurationDiff: 2,
+    variantDiscoveryLimit: 200,
+    variantFilenameHeuristics: true,
+    variantMetadataHeuristics: true,
+    variantAutoSuggestThreshold: 0.94,
+    variantReviewThreshold: 0.82
   };
 
   var VARIANT_KEYS = [
@@ -53,6 +60,78 @@ var SceneMetadataVariants = (function () {
     "variant_parent_id",
     "variant_label",
     "variant_sort_index"
+  ];
+
+  var VARIANT_TOKEN_DEFINITIONS = [
+    { token: "preview", label: "Preview", penalty: 0.22 },
+    { token: "trailer", label: "Trailer", penalty: 0.22 },
+    { token: "clip", label: "Clip", penalty: 0.18 },
+    { token: "sample", label: "Sample", penalty: 0.18 },
+    { token: "loop", label: "Loop", penalty: 0.14 },
+    { token: "edit", label: "Edit", penalty: 0.12 },
+    { token: "camera", label: "Camera", penalty: 0.08 },
+    { token: "cam", label: "Camera", penalty: 0.08 },
+    { token: "alt", label: "Alternate", penalty: 0.08 },
+    { token: "v2", label: "Version 2", penalty: 0.04 },
+    { token: "wm", label: "Watermarked", penalty: 0.16 },
+    { token: "watermarked", label: "Watermarked", penalty: 0.16 },
+    { token: "watermark", label: "Watermarked", penalty: 0.16 },
+    { token: "censored", label: "Censored", penalty: 0.18 },
+    { token: "censor", label: "Censored", penalty: 0.18 },
+    { token: "clothed", label: "Clothed", penalty: 0.12 },
+    { token: "cloth", label: "Clothed", penalty: 0.10 },
+    { token: "bra", label: "Clothed", penalty: 0.08 },
+    { token: "toponly", label: "Top only", penalty: 0.08 },
+    { token: "top only", label: "Top only", penalty: 0.08 },
+    { token: "silent", label: "Silent", penalty: 0.18 },
+    { token: "mute", label: "Muted", penalty: 0.18 },
+    { token: "muted", label: "Muted", penalty: 0.18 },
+    { token: "cropped", label: "Cropped", penalty: 0.14 },
+    { token: "crop", label: "Cropped", penalty: 0.14 },
+    { token: "vertical", label: "Vertical", penalty: 0.10 },
+    { token: "portrait", label: "Vertical", penalty: 0.10 },
+    { token: "phone", label: "Phone", penalty: 0.12 },
+    { token: "switched", label: "Switched", penalty: 0.08 },
+    { token: "revision", label: "Revision", penalty: 0.04 },
+    { token: "rev", label: "Revision", penalty: 0.04 },
+    { token: "no male audio", label: "NMA", penalty: 0.08 },
+    { token: "nma", label: "NMA", penalty: 0.08 },
+    { token: "pov", label: "POV", penalty: 0.12 },
+    { token: "point of view", label: "POV", penalty: 0.12 },
+    { token: "bonus", label: "Bonus", penalty: 0.10 },
+    { token: "nude", label: "Nude", penalty: 0.04 },
+    { token: "old version", label: "Old version", penalty: 0.12 },
+    { token: "nologo", label: "No logo", penalty: 0.02 },
+    { token: "no logo", label: "No logo", penalty: 0.02 }
+  ];
+
+  var QUALITY_TOKENS = {
+    "2160p": 0.22,
+    "4k": 0.22,
+    "1440p": 0.18,
+    "2k": 0.16,
+    "1080p": 0.12,
+    "720p": 0.04,
+    "480p": -0.05
+  };
+
+  var CANONICAL_PARENT_MARKERS = [
+    { phrase: "std", label: "Standard", rank: 3, score: 0.24 },
+    { phrase: "standard", label: "Standard", rank: 3, score: 0.24 },
+    { phrase: "default", label: "Default", rank: 3, score: 0.24 },
+    { phrase: "regular", label: "Regular", rank: 2, score: 0.10 },
+    { phrase: "normal", label: "Normal", rank: 2, score: 0.10 },
+    { phrase: "vanilla", label: "Vanilla", rank: 2, score: 0.10 },
+    { phrase: "full version", label: "Full version", rank: 2, score: 0.12 },
+    { phrase: "full animation", label: "Full animation", rank: 2, score: 0.12 },
+    { phrase: "full anim", label: "Full animation", rank: 2, score: 0.12 },
+    { phrase: "full audio", label: "Full audio", rank: 2, score: 0.10 },
+    { phrase: "complete", label: "Complete", rank: 2, score: 0.10 },
+    { phrase: "uncut", label: "Uncut", rank: 2, score: 0.10 },
+    { phrase: "full", label: "Full", rank: 2, score: 0.10, terminalOnly: true },
+    { phrase: "original", label: "Original", rank: 1, score: 0.05 },
+    { phrase: "base", label: "Base", rank: 1, score: 0.05 },
+    { phrase: "main", label: "Main", rank: 1, score: 0.05 }
   ];
 
   var EMBEDDED_ALIASES = {
@@ -225,12 +304,19 @@ var SceneMetadataVariants = (function () {
     cfg.copyPrimaryGroupsToVariantIfMissing = coerceBool(cfg.copyPrimaryGroupsToVariantIfMissing, true);
     cfg.copyPrimaryTagsToVariantIfMissing = coerceBool(cfg.copyPrimaryTagsToVariantIfMissing, false);
     cfg.allowVariantMetadataOverwrite = coerceBool(cfg.allowVariantMetadataOverwrite, false);
+    cfg.variantFilenameHeuristics = coerceBool(cfg.variantFilenameHeuristics, true);
+    cfg.variantMetadataHeuristics = coerceBool(cfg.variantMetadataHeuristics, true);
     cfg.confidenceThreshold = normalizeThreshold(cfg.confidenceThreshold, DEFAULT_CONFIG.confidenceThreshold);
     cfg.reviewThreshold = normalizeThreshold(cfg.reviewThreshold, DEFAULT_CONFIG.reviewThreshold);
+    cfg.variantAutoSuggestThreshold = normalizeThreshold(cfg.variantAutoSuggestThreshold, DEFAULT_CONFIG.variantAutoSuggestThreshold);
+    cfg.variantReviewThreshold = normalizeThreshold(cfg.variantReviewThreshold, DEFAULT_CONFIG.variantReviewThreshold);
     cfg.sceneDiscoveryLimit = Math.max(1, Math.min(500, Number(cfg.sceneDiscoveryLimit) || 50));
     cfg.sceneDiscoveryPageSize = Math.max(1, Math.min(250, Number(cfg.sceneDiscoveryPageSize) || 100));
     cfg.variantScanLimit = Math.max(0, Math.min(100000, Number(cfg.variantScanLimit) || 0));
     cfg.variantScanPageSize = Math.max(1, Math.min(250, Number(cfg.variantScanPageSize) || 100));
+    cfg.variantDiscoveryDistance = Math.max(0, Math.min(64, Math.round(Number(cfg.variantDiscoveryDistance) || DEFAULT_CONFIG.variantDiscoveryDistance)));
+    cfg.variantDiscoveryDurationDiff = Math.max(0, Math.min(600, Number(cfg.variantDiscoveryDurationDiff) || DEFAULT_CONFIG.variantDiscoveryDurationDiff));
+    cfg.variantDiscoveryLimit = Math.max(2, Math.min(2000, Number(cfg.variantDiscoveryLimit) || DEFAULT_CONFIG.variantDiscoveryLimit));
     cfg.variantHiddenTag = String(cfg.variantHiddenTag || DEFAULT_CONFIG.variantHiddenTag);
     cfg.needsReviewTag = String(cfg.needsReviewTag || DEFAULT_CONFIG.needsReviewTag);
     cfg.franchiseStudioField = String(cfg.franchiseStudioField || DEFAULT_CONFIG.franchiseStudioField);
@@ -382,6 +468,1400 @@ var SceneMetadataVariants = (function () {
 
   function groupInputs(ids) {
     return uniq(ids).map(function (id) { return { group_id: String(id) }; });
+  }
+
+  function firstFile(scene) {
+    return scene && scene.files && scene.files[0] || {};
+  }
+
+  function sceneDisplayTitle(scene) {
+    var file = firstFile(scene);
+    return String((scene && scene.title) || file.basename || file.path || ("Scene " + (scene && scene.id || "")));
+  }
+
+  function scenePathText(scene) {
+    var file = firstFile(scene);
+    return [sceneDisplayTitle(scene), scene && scene.details || "", file.basename || "", file.path || ""].join(" ");
+  }
+
+  var NON_CHARACTER_TERMS = {
+    "alt": true, "angle": true, "angles": true, "animation": true, "bonus": true,
+    "clip": true, "compilation": true, "cowgirl": true, "doggy": true, "loop": true,
+    "missionary": true, "position": true, "preview": true, "scene": true, "test": true,
+    "version": true, "watermarked": true
+  };
+
+  function standardizedNameParts(scene) {
+    var file = firstFile(scene);
+    var base = basenameNoExt(file.basename || file.path || sceneDisplayTitle(scene));
+    base = base.replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
+    return base.split(/\s+[-\u2013\u2014]\s+/).map(function (part) { return part.trim(); }).filter(Boolean);
+  }
+
+  function matchingSceneGroup(scene, rawArtist) {
+    var groups = asArray(scene && scene.groups).map(function (entry) { return entry && entry.group; }).filter(Boolean);
+    for (var i = 0; i < groups.length; i++) {
+      if (objectMatchesName(groups[i], rawArtist)) return groups[i];
+    }
+    return groups.length === 1 ? groups[0] : null;
+  }
+
+  function characterFieldParts(value) {
+    return String(value || "").split(/\s*(?:,|\+|&|\band\b)\s*/i).map(function (part) {
+      return part.trim();
+    }).filter(Boolean);
+  }
+
+  function likelyCharacterTag(tag, text) {
+    if (!tag || !tag.name) return false;
+    var normalizedName = normalize(tag.name);
+    if (!normalizedName || NON_CHARACTER_TERMS[normalizedName] || normalizedName.indexOf("variant hidden") !== -1 || normalizedName.indexOf("needs review") !== -1) return false;
+    if (containsPhrase(text, tag.name)) return true;
+    var aliases = aliasValues(tag);
+    for (var i = 0; i < aliases.length; i++) if (containsPhrase(text, aliases[i])) return true;
+    return false;
+  }
+
+  function sceneVariantIdentity(scene) {
+    var parts = standardizedNameParts(scene);
+    var rawArtist = parts.length >= 2 ? parts[0] : "";
+    var group = matchingSceneGroup(scene, rawArtist);
+    var artistLabel = group && group.name || rawArtist;
+    var artistKey = normalize(artistLabel);
+    var characterText = parts.length >= 2 ? parts[1] : "";
+    var matchingTags = asArray(scene && scene.tags).filter(function (tag) { return likelyCharacterTag(tag, characterText); });
+    var characterLabels = [];
+    var filenameCharacterLabels = [];
+    if (parts.length >= 3) {
+      characterFieldParts(parts[1]).forEach(function (rawLabel) {
+        var matched = matchingTags.filter(function (tag) { return likelyCharacterTag(tag, rawLabel); })[0];
+        filenameCharacterLabels.push(String(matched && matched.name || rawLabel));
+      });
+      matchingTags.forEach(function (tag) {
+        var key = normalize(tag.name);
+        if (!filenameCharacterLabels.some(function (label) { return normalize(label) === key; })) {
+          filenameCharacterLabels.push(String(tag.name));
+        }
+      });
+      characterLabels = filenameCharacterLabels.slice();
+    } else if (matchingTags.length) {
+      matchingTags.forEach(function (tag) {
+        characterLabels.push(String(tag.name));
+        filenameCharacterLabels.push(String(tag.name));
+      });
+    } else if (characterText) {
+      Object.keys(EMBEDDED_ALIASES.characters).forEach(function (alias) {
+        if (containsPhrase(characterText, alias)) characterLabels.push(EMBEDDED_ALIASES.characters[alias]);
+      });
+      if (!characterLabels.length) {
+        var words = normalize(characterText).split(/\s+/).filter(Boolean);
+        var generic = words.some(function (word) { return !!NON_CHARACTER_TERMS[word]; });
+        if (!generic && words.length > 0 && words.length <= 3) characterLabels = characterFieldParts(characterText);
+      }
+      filenameCharacterLabels = characterLabels.slice();
+    }
+    var characterMap = {};
+    characterLabels.forEach(function (label) {
+      var key = normalize(label);
+      if (key) characterMap[key] = String(label);
+    });
+    var characterKeys = Object.keys(characterMap).sort();
+    var filenameCharacterMap = {};
+    filenameCharacterLabels.forEach(function (label) {
+      var key = normalize(label);
+      if (key) filenameCharacterMap[key] = true;
+    });
+    return {
+      artistKey: artistKey,
+      artistLabel: artistLabel || "",
+      artistSource: group ? "stash_group" : (rawArtist ? "filename" : "unknown"),
+      characterKey: characterKeys.join("|"),
+      characterLabels: characterKeys.map(function (key) { return characterMap[key]; }),
+      characterSource: matchingTags.length ? "stash_tags" : (characterKeys.length ? "filename" : "unknown"),
+      filenameCharacterKey: Object.keys(filenameCharacterMap).sort().join("|")
+    };
+  }
+
+  function identityCompatible(a, b) {
+    var left = a || {};
+    var right = b || {};
+    if (left.artistKey && right.artistKey && left.artistKey !== right.artistKey) return false;
+    if (left.filenameCharacterKey && right.filenameCharacterKey &&
+        left.filenameCharacterKey !== right.filenameCharacterKey) return false;
+    if (left.characterKey && right.characterKey && left.characterKey !== right.characterKey) return false;
+    return true;
+  }
+
+  function mergeIdentity(base, addition) {
+    var out = Object.assign({}, base || {});
+    var next = addition || {};
+    if (!out.artistKey && next.artistKey) {
+      out.artistKey = next.artistKey;
+      out.artistLabel = next.artistLabel;
+      out.artistSource = next.artistSource;
+    }
+    if (!out.characterKey && next.characterKey) {
+      out.characterKey = next.characterKey;
+      out.characterLabels = next.characterLabels;
+      out.characterSource = next.characterSource;
+    }
+    if (!out.filenameCharacterKey && next.filenameCharacterKey) out.filenameCharacterKey = next.filenameCharacterKey;
+    return out;
+  }
+
+  function partitionVariantCluster(rawScenes, cfg) {
+    var items = [];
+    var seen = {};
+    asArray(rawScenes).forEach(function (scene) {
+      if (!scene || scene.id === undefined || scene.id === null || seen[String(scene.id)]) return;
+      seen[String(scene.id)] = true;
+      var identity = sceneVariantIdentity(scene);
+      items.push({ scene: scene, identity: identity, completeness: (identity.artistKey ? 1 : 0) + (identity.characterKey ? 1 : 0) });
+    });
+    items.sort(function (a, b) {
+      if (a.completeness !== b.completeness) return b.completeness - a.completeness;
+      return String(a.scene.id).localeCompare(String(b.scene.id), undefined, { numeric: true });
+    });
+    var partitions = [];
+    items.forEach(function (item) {
+      var matches = [];
+      partitions.forEach(function (partition, index) {
+        if (!identityCompatible(partition.identity, item.identity)) return;
+        var score = 0;
+        if (partition.identity.artistKey && item.identity.artistKey && partition.identity.artistKey === item.identity.artistKey) score += 2;
+        if (partition.identity.characterKey && item.identity.characterKey && partition.identity.characterKey === item.identity.characterKey) score += 2;
+        matches.push({ index: index, score: score });
+      });
+      matches.sort(function (a, b) { return b.score - a.score; });
+      var selected = matches.length === 1 || (matches.length > 1 && matches[0].score > matches[1].score) ? matches[0] : null;
+      if (!selected) {
+        partitions.push({ scenes: [item.scene], identity: item.identity });
+      } else {
+        partitions[selected.index].scenes.push(item.scene);
+        partitions[selected.index].identity = mergeIdentity(partitions[selected.index].identity, item.identity);
+      }
+    });
+    var settings = mergeConfig(cfg || {});
+    var mediaPartitions = [];
+    partitions.forEach(function (partition) {
+      partition.scenes.forEach(function (scene) {
+        var selected = null;
+        for (var i = 0; i < mediaPartitions.length; i++) {
+          if (!identityCompatible(mediaPartitions[i].identity, sceneVariantIdentity(scene))) continue;
+          var compatible = mediaPartitions[i].scenes.every(function (member) {
+            return versionCompatible(member, scene) && sceneMediaCompatibility(member, scene, settings).compatible;
+          });
+          if (compatible) {
+            selected = mediaPartitions[i];
+            break;
+          }
+        }
+        if (selected) selected.scenes.push(scene);
+        else mediaPartitions.push({ scenes: [scene], identity: sceneVariantIdentity(scene) });
+      });
+    });
+    var coherentPartitions = [];
+    mediaPartitions.forEach(function (partition) {
+      var scenes = partition.scenes;
+      var parent = scenes.map(function (_, index) { return index; });
+      function find(index) {
+        while (parent[index] !== index) {
+          parent[index] = parent[parent[index]];
+          index = parent[index];
+        }
+        return index;
+      }
+      function union(a, b) {
+        var ra = find(a);
+        var rb = find(b);
+        if (ra !== rb) parent[rb] = ra;
+      }
+      for (var i = 0; i < scenes.length; i++) {
+        for (var j = i + 1; j < scenes.length; j++) {
+          if (versionCompatible(scenes[i], scenes[j]) && filenameSimilarity(scenes[i], scenes[j]) >= 0.82) union(i, j);
+        }
+      }
+      var groups = {};
+      scenes.forEach(function (scene, index) {
+        var root = String(find(index));
+        if (!groups[root]) groups[root] = [];
+        groups[root].push(scene);
+      });
+      var grouped = Object.keys(groups).map(function (root) { return groups[root]; });
+      var hasStrongSubgroup = grouped.some(function (group) { return group.length > 1; });
+      if (!hasStrongSubgroup) {
+        coherentPartitions.push(partition);
+        return;
+      }
+      grouped.forEach(function (group) {
+        coherentPartitions.push({
+          scenes: group,
+          identity: group.reduce(function (identity, scene) {
+            return mergeIdentity(identity, sceneVariantIdentity(scene));
+          }, {})
+        });
+      });
+    });
+    return coherentPartitions;
+  }
+
+  function basenameNoExt(value) {
+    var raw = String(value || "").split(/[?#]/)[0];
+    var base = raw.split(/[\\/]/).pop() || raw;
+    try {
+      base = decodeURIComponent(base);
+    } catch (e) {
+      // Keep the raw basename when URL decoding is not applicable.
+    }
+    return base.replace(/\.[a-z0-9]{2,5}$/i, "");
+  }
+
+  function qualityScore(text) {
+    var n = normalize(text);
+    var score = 0;
+    Object.keys(QUALITY_TOKENS).forEach(function (token) {
+      if (containsPhrase(n, token)) score = Math.max(score, QUALITY_TOKENS[token]);
+    });
+    return score;
+  }
+
+  function canonicalVariantText(scene) {
+    var file = firstFile(scene);
+    return basenameNoExt(file.basename || file.path || sceneDisplayTitle(scene));
+  }
+
+  function canonicalMarkerMatches(text, marker) {
+    var n = normalize(String(text || "").replace(/\[[^\]]*\]/g, " "));
+    var phrase = normalize(marker && marker.phrase);
+    if (!n || !phrase) return false;
+    if (marker.terminalOnly) return new RegExp("(?:^|\\s)" + phrase.replace(/\s+/g, "\\s+") + "$").test(n);
+    return containsPhrase(n, phrase);
+  }
+
+  function canonicalParentInfo(sceneOrText) {
+    var text = typeof sceneOrText === "string" ? sceneOrText : canonicalVariantText(sceneOrText);
+    var labels = [];
+    var rank = 0;
+    var score = 0;
+    CANONICAL_PARENT_MARKERS.forEach(function (marker) {
+      if (!canonicalMarkerMatches(text, marker)) return;
+      if (labels.indexOf(marker.label) === -1) labels.push(marker.label);
+      rank = Math.max(rank, Number(marker.rank) || 0);
+      score += Number(marker.score) || 0;
+    });
+    return { rank: rank, score: Math.min(0.3, score), labels: labels, strong: rank >= 3 };
+  }
+
+  function explicitFullVersionScore(text) {
+    var n = normalize(text);
+    var score = 0;
+    if (containsPhrase(n, "uncensored")) score += 0.08;
+    if (containsPhrase(n, "raw")) score += 0.05;
+    if (containsPhrase(n, "nsfw")) score += 0.03;
+    if (containsPhrase(n, "final cut") || containsPhrase(n, "final version") || containsPhrase(n, "final render")) score += 0.05;
+    return Math.min(0.16, score);
+  }
+
+  function numericVariantInfo(scene) {
+    var info = terminalVariantNumberInfo(normalizedVariantStem(scene));
+    if (!info.hasNumber) return { hasNumber: false, number: null, score: 0.08 };
+    var number = info.number;
+    var penalty = 0.015 + Math.min(0.09, Math.max(0, number - 1) * 0.006);
+    return { hasNumber: true, number: number, score: -penalty, base: info.base };
+  }
+
+  function variantTokens(text) {
+    var n = normalize(text);
+    var found = [];
+    VARIANT_TOKEN_DEFINITIONS.forEach(function (def) {
+      if (containsPhrase(n, def.token)) {
+        var exists = false;
+        for (var i = 0; i < found.length; i++) if (found[i].token === def.token || found[i].label === def.label) exists = true;
+        if (!exists) found.push({ token: def.token, label: def.label, penalty: def.penalty });
+      }
+    });
+    return found;
+  }
+
+  function tokenPenalty(tokens) {
+    var total = 0;
+    (tokens || []).forEach(function (t) { total += Number(t.penalty) || 0; });
+    return Math.min(0.5, total);
+  }
+
+  function normalizedVariantStemInternal(scene, removeDescriptorNumbers) {
+    var file = firstFile(scene);
+    var split = splitArtistTitle(file.basename || sceneDisplayTitle(scene));
+    var stem = basenameNoExt(split.title || file.basename || sceneDisplayTitle(scene));
+    stem = stem.replace(/\[[^\]]*\]/g, " ");
+    stem = stem.replace(/\([^)]*\)/g, " ");
+    var n = normalize(stem);
+    if (removeDescriptorNumbers) {
+      n = n.replace(/\b(?:alt|alternate)\s+angles?(?:\s+\d{1,3})?\b/g, " ");
+    }
+    VARIANT_TOKEN_DEFINITIONS.forEach(function (def) {
+      var phrase = normalize(def.token).replace(/\s+/g, "\\s+");
+      var suffix = removeDescriptorNumbers ? "(?:\\s+\\d{1,3})?" : "";
+      n = (" " + n + " ").replace(new RegExp(" " + phrase + suffix + " ", "g"), " ");
+    });
+    Object.keys(QUALITY_TOKENS).forEach(function (token) {
+      n = (" " + n + " ").replace(new RegExp(" " + normalize(token) + " ", "g"), " ");
+    });
+    CANONICAL_PARENT_MARKERS.forEach(function (marker) {
+      var phrase = normalize(marker.phrase).replace(/\s+/g, "\\s+");
+      if (marker.terminalOnly) n = n.replace(new RegExp("(?:^|\\s)" + phrase + "$"), " ");
+      else n = (" " + n + " ").replace(new RegExp(" " + phrase + " ", "g"), " ");
+    });
+    n = n.replace(/\b(?:hd|uhd|vr|sfm|sound|audio|final|fixed|uncensored|censored)\b/g, " ");
+    return n.replace(/\s+/g, " ").trim();
+  }
+
+  function normalizedVariantStem(scene) {
+    return normalizedVariantStemInternal(scene, false);
+  }
+
+  function normalizedFamilyStem(scene) {
+    return normalizedVariantStemInternal(scene, true);
+  }
+
+  function terminalVariantNumberInfo(stem) {
+    var n = String(stem || "").replace(/\s+/g, " ").trim();
+    var explicit = n.match(/^(.*?)(?:\s+)(?:v|ver|version|part|scene|clip|cam|camera|angle)\s*(\d{1,3})$/i);
+    if (explicit && explicit[1].trim()) {
+      return { hasNumber: true, number: Number(explicit[2]), base: explicit[1].trim(), explicit: true };
+    }
+    var bare = n.match(/^(.*\S)\s+(\d{1,2})$/);
+    if (bare && bare[1].trim()) {
+      return { hasNumber: true, number: Number(bare[2]), base: bare[1].trim(), explicit: false };
+    }
+    return { hasNumber: false, number: null, base: n, explicit: false };
+  }
+
+  function explicitVersionKey(sceneOrText) {
+    var text = typeof sceneOrText === "string" ? sceneOrText : scenePathText(sceneOrText);
+    var matches = normalize(text).match(/\bv\s*(\d{1,3})\b/g) || [];
+    if (!matches.length) return "";
+    var number = (matches[0].match(/\d{1,3}/) || [])[0];
+    return number ? "v" + String(Number(number)) : "";
+  }
+
+  function versionCompatible(a, b) {
+    var left = explicitVersionKey(a);
+    var right = explicitVersionKey(b);
+    return !left || !right || left === right;
+  }
+
+  function baseFamilyStemForScene(scene) {
+    var stem = normalizedFamilyStem(scene);
+    var version = explicitVersionKey(scene);
+    if (version) {
+      stem = (" " + stem + " ").replace(new RegExp("\\s" + version.replace(/^v/, "v\\s*") + "\\s", "g"), " ");
+    }
+    return terminalVariantNumberInfo(stem.replace(/\s+/g, " ").trim()).base;
+  }
+
+  function familyStemForScene(scene) {
+    var base = baseFamilyStemForScene(scene);
+    var version = explicitVersionKey(scene);
+    return base + (version ? "|version:" + version : "");
+  }
+
+  function tokenSet(text) {
+    var words = normalize(text).split(/\s+/).filter(function (w) { return w && w.length > 1; });
+    var out = {};
+    words.forEach(function (w) { out[w] = true; });
+    return out;
+  }
+
+  function setSimilarity(a, b) {
+    var ak = Object.keys(a || {});
+    var bk = Object.keys(b || {});
+    if (!ak.length && !bk.length) return 0;
+    var union = {};
+    var intersection = 0;
+    ak.forEach(function (k) { union[k] = true; });
+    bk.forEach(function (k) {
+      if (union[k]) intersection++;
+      union[k] = true;
+    });
+    return intersection / Math.max(1, Object.keys(union).length);
+  }
+
+  function stemSimilarity(as, bs) {
+    if (!as || !bs) return 0;
+    if (as === bs) return 1;
+    var ai = terminalVariantNumberInfo(as);
+    var bi = terminalVariantNumberInfo(bs);
+    if ((ai.hasNumber && ai.base === bs) || (bi.hasNumber && bi.base === as) ||
+        (ai.hasNumber && bi.hasNumber && ai.base === bi.base)) return 1;
+    var sim = setSimilarity(tokenSet(as), tokenSet(bs));
+    if (as.indexOf(bs) !== -1 || bs.indexOf(as) !== -1) sim = Math.max(sim, 0.82);
+    return Math.max(0, Math.min(1, sim));
+  }
+
+  function filenameSimilarity(a, b) {
+    if (!versionCompatible(a, b)) return 0;
+    return stemSimilarity(normalizedVariantStem(a), normalizedVariantStem(b));
+  }
+
+  function fingerprintValue(scene, type) {
+    var match = asArray(firstFile(scene).fingerprints).filter(function (fingerprint) {
+      return normalize(fingerprint && fingerprint.type) === normalize(type);
+    })[0];
+    return match && String(match.value || "").toLowerCase() || "";
+  }
+
+  function hexHammingDistance(a, b) {
+    if (!a || !b || a.length !== b.length || !/^[0-9a-f]+$/i.test(a + b)) return null;
+    var distance = 0;
+    for (var i = 0; i < a.length; i++) {
+      var value = parseInt(a.charAt(i), 16) ^ parseInt(b.charAt(i), 16);
+      while (value) {
+        distance += value & 1;
+        value >>= 1;
+      }
+    }
+    return distance;
+  }
+
+  function sceneMediaCompatibility(a, b, cfg) {
+    var af = firstFile(a);
+    var bf = firstFile(b);
+    var durationA = Number(af.duration) || 0;
+    var durationB = Number(bf.duration) || 0;
+    var durationDelta = durationA && durationB ? Math.abs(durationA - durationB) : null;
+    var durationLimit = Math.max(0, Number(cfg && cfg.variantDiscoveryDurationDiff) || DEFAULT_CONFIG.variantDiscoveryDurationDiff);
+    var aspectA = Number(af.width) > 0 && Number(af.height) > 0 ? Number(af.width) / Number(af.height) : 0;
+    var aspectB = Number(bf.width) > 0 && Number(bf.height) > 0 ? Number(bf.width) / Number(bf.height) : 0;
+    var aspectDelta = aspectA && aspectB ? Math.abs(aspectA - aspectB) : null;
+    var phashDistance = hexHammingDistance(fingerprintValue(a, "phash"), fingerprintValue(b, "phash"));
+    var phashLimit = Math.max(0, Number(cfg && cfg.variantDiscoveryDistance) || DEFAULT_CONFIG.variantDiscoveryDistance);
+    var compatible = true;
+    if (durationDelta !== null && durationDelta > durationLimit) compatible = false;
+    if (aspectDelta !== null && aspectDelta > 0.08) compatible = false;
+    if (phashDistance !== null && phashDistance > phashLimit) compatible = false;
+    return {
+      compatible: compatible,
+      verified: durationDelta !== null || aspectDelta !== null || phashDistance !== null,
+      durationDelta: durationDelta,
+      aspectDelta: aspectDelta,
+      phashDistance: phashDistance
+    };
+  }
+
+  function hasOrientationVariantSignal(scene) {
+    var text = scenePathText(scene);
+    return containsPhrase(text, "vertical") || containsPhrase(text, "portrait") ||
+      containsPhrase(text, "phone") || containsPhrase(text, "rotated") ||
+      containsPhrase(text, "rotation");
+  }
+
+  function duplicateNeighborhoodCompatibility(a, b, cfg) {
+    var af = firstFile(a);
+    var bf = firstFile(b);
+    var durationA = Number(af.duration) || 0;
+    var durationB = Number(bf.duration) || 0;
+    var durationDelta = durationA && durationB ? Math.abs(durationA - durationB) : null;
+    var durationLimit = Math.max(0, Number(cfg && cfg.variantDiscoveryDurationDiff) || DEFAULT_CONFIG.variantDiscoveryDurationDiff);
+    var aspectA = Number(af.width) > 0 && Number(af.height) > 0 ? Number(af.width) / Number(af.height) : 0;
+    var aspectB = Number(bf.width) > 0 && Number(bf.height) > 0 ? Number(bf.width) / Number(bf.height) : 0;
+    var aspectDelta = aspectA && aspectB ? Math.abs(aspectA - aspectB) : null;
+    var rotatedAspectDelta = aspectA && aspectB ? Math.abs(aspectA - (1 / aspectB)) : null;
+    var rotationCompatible = rotatedAspectDelta !== null && rotatedAspectDelta <= 0.08 &&
+      (hasOrientationVariantSignal(a) || hasOrientationVariantSignal(b));
+    var compatible = true;
+    if (durationDelta !== null && durationDelta > durationLimit) compatible = false;
+    if (aspectDelta !== null && aspectDelta > 0.08 && !rotationCompatible) compatible = false;
+    return {
+      compatible: compatible,
+      durationDelta: durationDelta,
+      aspectDelta: aspectDelta,
+      rotatedAspectDelta: rotatedAspectDelta,
+      rotationCompatible: rotationCompatible
+    };
+  }
+
+  function familyMediaEvidence(members, cfg) {
+    var verifiedPairs = 0;
+    var maxDurationDelta = 0;
+    var maxAspectDelta = 0;
+    var maxPHashDistance = 0;
+    for (var i = 0; i < members.length; i++) {
+      for (var j = i + 1; j < members.length; j++) {
+        var left = { files: [{ duration: members[i].media.duration, width: members[i].media.width, height: members[i].media.height, fingerprints: members[i].media.fingerprints }] };
+        var right = { files: [{ duration: members[j].media.duration, width: members[j].media.width, height: members[j].media.height, fingerprints: members[j].media.fingerprints }] };
+        var evidence = sceneMediaCompatibility(left, right, cfg);
+        if (evidence.verified) verifiedPairs++;
+        if (evidence.durationDelta !== null) maxDurationDelta = Math.max(maxDurationDelta, evidence.durationDelta);
+        if (evidence.aspectDelta !== null) maxAspectDelta = Math.max(maxAspectDelta, evidence.aspectDelta);
+        if (evidence.phashDistance !== null) maxPHashDistance = Math.max(maxPHashDistance, evidence.phashDistance);
+      }
+    }
+    return {
+      mediaVerified: verifiedPairs > 0,
+      verifiedMediaPairs: verifiedPairs,
+      maxDurationDelta: Math.round(maxDurationDelta * 1000) / 1000,
+      maxAspectDelta: Math.round(maxAspectDelta * 1000) / 1000,
+      maxPHashDistance: maxPHashDistance
+    };
+  }
+
+  function metadataTokens(scene) {
+    var out = {};
+    if (scene && scene.studio && scene.studio.name) out["studio:" + normalize(scene.studio.name)] = true;
+    asArray(scene && scene.groups).forEach(function (g) {
+      if (g && g.group && g.group.name) out["group:" + normalize(g.group.name)] = true;
+    });
+    asArray(scene && scene.tags).forEach(function (t) {
+      if (t && t.name) out["tag:" + normalize(t.name)] = true;
+    });
+    return out;
+  }
+
+  function metadataSimilarity(a, b) {
+    return setSimilarity(metadataTokens(a), metadataTokens(b));
+  }
+
+  function metadataCompleteness(scene) {
+    var score = 0;
+    if (scene && scene.title) score += 0.18;
+    if (scene && scene.details) score += 0.08;
+    if (scene && scene.studio && scene.studio.id) score += 0.18;
+    if (asArray(scene && scene.groups).length) score += 0.18;
+    if (asArray(scene && scene.tags).length) score += 0.22;
+    if (firstFile(scene).basename || firstFile(scene).path) score += 0.16;
+    return Math.min(1, score);
+  }
+
+  function parentScore(scene) {
+    var text = scenePathText(scene);
+    var tokens = variantTokens(text);
+    var numberInfo = numericVariantInfo(scene);
+    var canonical = canonicalParentInfo(scene);
+    var score = 0.52 + (metadataCompleteness(scene) * 0.28) + qualityScore(text) + explicitFullVersionScore(text) + canonical.score + numberInfo.score - tokenPenalty(tokens);
+    var cf = customFields(scene);
+    if (cf.variant_role === "primary") score += 0.12;
+    if (cf.variant_role === "variant") score -= 0.32;
+    return Math.max(0, Math.min(1, score));
+  }
+
+  function canonicalOriginalIds(scenes) {
+    var stems = {};
+    asArray(scenes).forEach(function (scene) {
+      stems[normalizedVariantStem(scene)] = true;
+    });
+    var originals = {};
+    asArray(scenes).forEach(function (scene) {
+      var info = terminalVariantNumberInfo(normalizedVariantStem(scene));
+      if (info.hasNumber && stems[info.base]) originals[info.base] = true;
+    });
+    var ids = {};
+    asArray(scenes).forEach(function (scene) {
+      if (originals[normalizedVariantStem(scene)]) ids[String(scene.id)] = true;
+    });
+    return ids;
+  }
+
+  function compareParentScenes(a, b, scenes) {
+    var originals = canonicalOriginalIds(scenes);
+    var ap = canonicalParentInfo(a);
+    var bp = canonicalParentInfo(b);
+    if ((ap.strong || bp.strong) && ap.rank !== bp.rank) return bp.rank - ap.rank;
+    var ao = !!originals[String(a.id)];
+    var bo = !!originals[String(b.id)];
+    if (ao !== bo) return ao ? -1 : 1;
+    var ai = numericVariantInfo(a);
+    var bi = numericVariantInfo(b);
+    if (ai.hasNumber !== bi.hasNumber) return ai.hasNumber ? 1 : -1;
+    if (ai.hasNumber && bi.hasNumber && ai.number !== bi.number) return ai.number - bi.number;
+    var scoreDiff = parentScore(b) - parentScore(a);
+    if (Math.abs(scoreDiff) > 0.000001) return scoreDiff;
+    return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+  }
+
+  function averagePairScore(scenes, scorer) {
+    var total = 0;
+    var count = 0;
+    for (var i = 0; i < scenes.length; i++) {
+      for (var j = i + 1; j < scenes.length; j++) {
+        total += scorer(scenes[i], scenes[j]);
+        count++;
+      }
+    }
+    return count ? total / count : 0;
+  }
+
+  function existingVariantSummary(scene) {
+    var cf = customFields(scene);
+    if (!cf.variant_role) return "";
+    if (cf.variant_role === "primary") return "primary";
+    if (cf.variant_role === "variant") return "variant_of_" + String(cf.variant_parent_id || "");
+    return String(cf.variant_role);
+  }
+
+  function familyIdFor(sceneIds) {
+    return "nsv2-" + uniq(sceneIds.map(String)).sort().join("-");
+  }
+
+  function labelForVariant(scene) {
+    var tokens = variantTokens(scenePathText(scene));
+    if (tokens.length) return tokens[0].label;
+    return "Variant";
+  }
+
+  function variantMemberForScene(scene, primaryId, originalIds) {
+    var isPrimary = String(scene.id) === String(primaryId);
+    var file = firstFile(scene);
+    var paths = scene && scene.paths || {};
+    var memberIdentity = sceneVariantIdentity(scene);
+    var parentPreference = canonicalParentInfo(scene);
+    return {
+      sceneId: String(scene.id),
+      title: sceneDisplayTitle(scene),
+      path: file.path || file.basename || "",
+      role: isPrimary ? "parent" : "child",
+      label: isPrimary ? "Primary" : labelForVariant(scene),
+      parentScore: parentScore(scene),
+      filenameStem: normalizedVariantStem(scene),
+      familyStem: familyStemForScene(scene),
+      explicitVersion: explicitVersionKey(scene),
+      hasExplicitNumber: numericVariantInfo(scene).hasNumber,
+      variantNumber: numericVariantInfo(scene).number,
+      isCanonicalOriginal: !!(originalIds && originalIds[String(scene.id)]),
+      parentPreferenceRank: parentPreference.rank,
+      parentPreferenceScore: parentPreference.score,
+      parentSignals: parentPreference.labels,
+      variantTokens: variantTokens(scenePathText(scene)).map(function (t) { return t.label; }),
+      existingVariant: existingVariantSummary(scene),
+      identity: memberIdentity,
+      media: {
+        screenshot: paths.screenshot || "",
+        preview: paths.preview || "",
+        webp: paths.webp || "",
+        vtt: paths.vtt || "",
+        sprite: paths.sprite || "",
+        width: Number(file.width) || 0,
+        height: Number(file.height) || 0,
+        duration: Number(file.duration) || 0,
+        fingerprints: asArray(file.fingerprints).map(function (fingerprint) {
+          return { type: fingerprint.type, value: fingerprint.value };
+        })
+      }
+    };
+  }
+
+  function familyConfidence(scenes, evidence, cfg) {
+    var filename = evidence.filenameSimilarity;
+    var metadata = evidence.metadataOverlap;
+    if (evidence.stashDuplicateCluster) {
+      return Math.max(0.65, Math.min(1, 0.48 + (filename * 0.34) + (metadata * 0.18)));
+    }
+    return Math.min(1, (filename * 0.72) + (metadata * 0.28));
+  }
+
+  function familyStatus(confidence, cfg) {
+    if (confidence >= cfg.variantAutoSuggestThreshold) return "auto_suggest";
+    if (confidence >= cfg.variantReviewThreshold) return "review";
+    return "ignore";
+  }
+
+  function buildVariantFamily(rawScenes, source, cfg, index) {
+    var byId = {};
+    var scenes = [];
+    asArray(rawScenes).forEach(function (scene) {
+      if (!scene || scene.id === undefined || scene.id === null) return;
+      var id = String(scene.id);
+      if (!byId[id]) {
+        byId[id] = true;
+        scenes.push(scene);
+      }
+    });
+    if (scenes.length < 2) return null;
+
+    var originalIds = canonicalOriginalIds(scenes);
+    scenes.sort(function (a, b) { return compareParentScenes(a, b, scenes); });
+    var primary = scenes[0];
+    var sceneIds = scenes.map(function (s) { return String(s.id); });
+    var evidence = {
+      stashDuplicateCluster: source === "stash_duplicate" || source === "duplicate_neighborhood",
+      duplicateNeighborhood: source === "duplicate_neighborhood",
+      descriptorFamily: source === "descriptor_family",
+      source: source,
+      duplicateClusterIndex: source === "stash_duplicate" ? index : null,
+      filenameSimilarity: cfg.variantFilenameHeuristics ? averagePairScore(scenes, filenameSimilarity) : 0,
+      metadataOverlap: cfg.variantMetadataHeuristics ? averagePairScore(scenes, metadataSimilarity) : 0,
+      sceneIds: sceneIds
+    };
+    var confidence = familyConfidence(scenes, evidence, cfg);
+    var status = familyStatus(confidence, cfg);
+    if ((source === "duplicate_neighborhood" || source === "descriptor_family") && status !== "ignore") status = "review";
+    var identity = {};
+    scenes.forEach(function (scene) { identity = mergeIdentity(identity, sceneVariantIdentity(scene)); });
+    if (status === "auto_suggest" && (!identity.artistKey || !identity.characterKey)) status = "review";
+    evidence.identityVerified = !!identity.artistKey && !!identity.characterKey;
+    var members = scenes.map(function (scene) {
+      return variantMemberForScene(scene, primary.id, originalIds);
+    });
+    Object.assign(evidence, familyMediaEvidence(members, cfg));
+    return {
+      familyId: familyIdFor(sceneIds),
+      status: status,
+      confidence: Math.round(confidence * 1000) / 1000,
+      proposedPrimaryId: String(primary.id),
+      members: members,
+      evidence: evidence,
+      identity: identity
+    };
+  }
+
+  function findDuplicateVariantClusters(cfg, runtime) {
+    var res = gqlDo(FIND_DUPLICATE_SCENES, {
+      distance: cfg.variantDiscoveryDistance,
+      duration_diff: cfg.variantDiscoveryDurationDiff
+    }, runtime, "FindDuplicateScenesForVariants");
+    return asArray(res && res.findDuplicateScenes);
+  }
+
+  function filenameVariantClusters(scenes) {
+    var groups = {};
+    var numbered = {};
+    var exactStems = {};
+    asArray(scenes).forEach(function (scene) {
+      var stem = normalizedVariantStem(scene);
+      if (!stem || stem.length < 4) return;
+      exactStems[stem] = true;
+      if (!groups[stem]) groups[stem] = [];
+      groups[stem].push(scene);
+      var info = terminalVariantNumberInfo(stem);
+      if (info.hasNumber) {
+        if (!numbered[info.base]) numbered[info.base] = [];
+        numbered[info.base].push({ scene: scene, number: info.number, explicit: info.explicit });
+      }
+    });
+    var clusters = Object.keys(groups).map(function (key) { return groups[key]; }).filter(function (cluster) { return cluster.length > 1; });
+    Object.keys(numbered).forEach(function (base) {
+      var entries = numbered[base];
+      var numbers = {};
+      entries.forEach(function (entry) { numbers[entry.number] = true; });
+      var hasOriginal = !!exactStems[base];
+      var numericValues = Object.keys(numbers).map(Number);
+      var explicitSequence = entries.some(function (entry) { return entry.explicit; });
+      var alphaWordCount = base.split(/\s+/).filter(function (word) { return /^[a-z]+$/.test(word); }).length;
+      var safeBareSequence = numericValues.length >= 3 && (Math.max.apply(Math, numericValues) <= 12 || alphaWordCount >= 2);
+      if (!hasOriginal && !explicitSequence && !safeBareSequence) return;
+      var cluster = entries.map(function (entry) { return entry.scene; });
+      if (hasOriginal) cluster = cluster.concat(groups[base] || []);
+      if (cluster.length > 1) clusters.push(cluster);
+    });
+    return clusters;
+  }
+
+  function sceneHasVariantNeighborhoodEvidence(scene) {
+    if (scene && Array.isArray(scene.variantTokens) && scene.variantTokens.length) return true;
+    if (scene && Array.isArray(scene.parentSignals) && scene.parentSignals.length) return true;
+    return variantTokens(scenePathText(scene)).length > 0 ||
+      canonicalParentInfo(scene).labels.length > 0;
+  }
+
+  function findScenesForVariantIdentity(identity, runtime) {
+    var terms = [];
+    if (identity && identity.artistLabel) terms.push(identity.artistLabel);
+    asArray(identity && identity.characterLabels).forEach(function (label) { terms.push(label); });
+    if (!terms.length) return [];
+    var res = gqlDo(FIND_SCENES, {
+      filter: { q: terms.join(" "), page: 1, per_page: 500, sort: "id", direction: "ASC" }
+    }, runtime, "FindVariantIdentityNeighborhood");
+    return asArray(res && res.findScenes && res.findScenes.scenes);
+  }
+
+  function partitionDuplicateNeighborhood(rawScenes, cfg) {
+    var scenes = [];
+    var seen = {};
+    asArray(rawScenes).forEach(function (scene) {
+      if (!scene || scene.id === undefined || scene.id === null || seen[String(scene.id)]) return;
+      seen[String(scene.id)] = true;
+      scenes.push(scene);
+    });
+    scenes.sort(function (a, b) {
+      var af = firstFile(a);
+      var bf = firstFile(b);
+      var durationDiff = (Number(af.duration) || 0) - (Number(bf.duration) || 0);
+      if (Math.abs(durationDiff) > 0.001) return durationDiff;
+      return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+    });
+    var partitions = [];
+    scenes.forEach(function (scene) {
+      var selected = null;
+      for (var i = 0; i < partitions.length; i++) {
+        if (partitions[i].every(function (member) {
+          return duplicateNeighborhoodCompatibility(member, scene, cfg).compatible;
+        })) {
+          selected = partitions[i];
+          break;
+        }
+      }
+      if (selected) selected.push(scene);
+      else partitions.push([scene]);
+    });
+    return partitions.filter(function (partition) { return partition.length > 1; });
+  }
+
+  function duplicateSupportedNeighborhoodFamilies(anchorFamilies, cfg, runtime, sceneCache) {
+    var out = [];
+    var searchCache = {};
+    var processed = {};
+    asArray(anchorFamilies).forEach(function (family, index) {
+      if (!family || !family.evidence || !family.evidence.stashDuplicateCluster) return;
+      var identity = family.identity || {};
+      if (!identity.artistKey || !identity.characterKey) return;
+      if (!asArray(family.members).some(sceneHasVariantNeighborhoodEvidence)) return;
+      var stems = {};
+      asArray(family.members).forEach(function (member) {
+        var stem = member.familyStem || terminalVariantNumberInfo(member.filenameStem || "").base;
+        if (stem) stems[stem] = true;
+      });
+      Object.keys(stems).forEach(function (stem) {
+        var familyKey = identity.artistKey + "|" + identity.characterKey + "|" + stem;
+        if (processed[familyKey]) return;
+        processed[familyKey] = true;
+        var identityKey = identity.artistKey + "|" + identity.characterKey;
+        if (!searchCache[identityKey]) {
+          try {
+            searchCache[identityKey] = findScenesForVariantIdentity(identity, runtime);
+          } catch (err) {
+            searchCache[identityKey] = [];
+            logLine("WARN", "variant identity neighborhood unavailable for " + identityKey + ": " +
+              String(err && err.message || err), runtime);
+          }
+        }
+        var exactMatches = searchCache[identityKey].filter(function (scene) {
+          var candidateIdentity = sceneVariantIdentity(scene);
+          if (candidateIdentity.artistKey !== identity.artistKey || !identityCompatible(candidateIdentity, identity)) return false;
+          return familyStemForScene(scene) === stem;
+        });
+        var anchorScenes = exactMatches.filter(function (scene) {
+          return asArray(family.members).some(function (member) { return String(member.sceneId) === String(scene.id); });
+        });
+        exactMatches = exactMatches.filter(function (scene) {
+          if (anchorScenes.some(function (anchor) { return String(anchor.id) === String(scene.id); })) return true;
+          if (sceneHasVariantNeighborhoodEvidence(scene)) return true;
+          var distance = minimumPHashDistanceToScenes(scene, anchorScenes);
+          return distance !== null && distance <= 12;
+        });
+        var hasAnchor = exactMatches.some(function (scene) {
+          return asArray(family.members).some(function (member) { return String(member.sceneId) === String(scene.id); });
+        });
+        if (!hasAnchor) return;
+        partitionDuplicateNeighborhood(exactMatches, cfg).forEach(function (partition, partitionIndex) {
+          if (!partition.some(sceneHasVariantNeighborhoodEvidence)) return;
+          partition.forEach(function (scene) { sceneCache[String(scene.id)] = scene; });
+          var expanded = buildVariantFamily(partition, "duplicate_neighborhood", cfg, index + ":" + partitionIndex);
+          if (expanded) out.push(expanded);
+        });
+      });
+    });
+    return out;
+  }
+
+  function findAllScenesForVariantDiscovery(runtime, sceneCache) {
+    var scenes = [];
+    var page = 1;
+    var perPage = 500;
+    while (true) {
+      var res = gqlDo(FIND_SCENES, {
+        filter: { page: page, per_page: perPage, sort: "id", direction: "ASC" }
+      }, runtime, "FindAllScenesForVariantDiscovery");
+      var root = res && res.findScenes || {};
+      var batch = asArray(root.scenes);
+      batch.forEach(function (scene) {
+        scenes.push(scene);
+        sceneCache[String(scene.id)] = scene;
+      });
+      if (batch.length < perPage || scenes.length >= (Number(root.count) || scenes.length)) break;
+      page++;
+    }
+    return scenes;
+  }
+
+  function descriptorSignalCount(scene) {
+    var count = variantTokens(scenePathText(scene)).length;
+    if (canonicalParentInfo(scene).labels.length) count++;
+    return count;
+  }
+
+  function minimumPHashDistance(scenes) {
+    var minimum = null;
+    for (var i = 0; i < scenes.length; i++) {
+      for (var j = i + 1; j < scenes.length; j++) {
+        var distance = hexHammingDistance(fingerprintValue(scenes[i], "phash"), fingerprintValue(scenes[j], "phash"));
+        if (distance !== null && (minimum === null || distance < minimum)) minimum = distance;
+      }
+    }
+    return minimum;
+  }
+
+  function minimumPHashDistanceToScenes(scene, references) {
+    var minimum = null;
+    asArray(references).forEach(function (reference) {
+      var distance = hexHammingDistance(fingerprintValue(scene, "phash"), fingerprintValue(reference, "phash"));
+      if (distance !== null && (minimum === null || distance < minimum)) minimum = distance;
+    });
+    return minimum;
+  }
+
+  function descriptorVariantFamilies(scenes, cfg) {
+    var groups = {};
+    asArray(scenes).forEach(function (scene) {
+      var identity = sceneVariantIdentity(scene);
+      if (!identity.artistKey || !identity.characterKey || !identity.filenameCharacterKey) return;
+      var stem = familyStemForScene(scene);
+      if (!stem || stem.length < 4) return;
+      var key = identity.artistKey + "|" + identity.filenameCharacterKey + "|" + stem;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(scene);
+    });
+
+    var families = [];
+    Object.keys(groups).forEach(function (key, groupIndex) {
+      var signaledGroupScenes = groups[key].filter(function (scene) { return descriptorSignalCount(scene) > 0; });
+      var eligibleGroupScenes = groups[key].filter(function (scene) {
+        if (descriptorSignalCount(scene) > 0) return true;
+        if (!numericVariantInfo(scene).hasNumber) return true;
+        var distance = minimumPHashDistanceToScenes(scene, signaledGroupScenes);
+        return distance !== null && distance <= 12;
+      });
+      partitionDuplicateNeighborhood(eligibleGroupScenes, cfg).forEach(function (partition, partitionIndex) {
+        if (partition.length < 2) return;
+        var signaledScenes = partition.filter(function (scene) { return descriptorSignalCount(scene) > 0; });
+        var minimumDistance = minimumPHashDistance(partition);
+        var hasConstrainedPHashSupport = minimumDistance !== null && minimumDistance <= 12;
+        if (signaledScenes.length < 2 && !(signaledScenes.length >= 1 && hasConstrainedPHashSupport)) return;
+        var family = buildVariantFamily(partition, "descriptor_family", cfg, groupIndex + ":" + partitionIndex);
+        if (!family) return;
+        family.evidence.minimumPHashDistance = minimumDistance;
+        family.evidence.constrainedPHashSupport = hasConstrainedPHashSupport;
+        family.evidence.descriptorSceneIds = signaledScenes.map(function (scene) { return String(scene.id); });
+        family.status = "review";
+        families.push(family);
+      });
+    });
+    return families;
+  }
+
+  function compareParentMembers(a, b) {
+    var ar = Number(a.parentPreferenceRank) || 0;
+    var br = Number(b.parentPreferenceRank) || 0;
+    if ((ar >= 3 || br >= 3) && ar !== br) return br - ar;
+    if (!!a.isCanonicalOriginal !== !!b.isCanonicalOriginal) return a.isCanonicalOriginal ? -1 : 1;
+    if (!!a.hasExplicitNumber !== !!b.hasExplicitNumber) return a.hasExplicitNumber ? 1 : -1;
+    if (a.hasExplicitNumber && b.hasExplicitNumber && Number(a.variantNumber) !== Number(b.variantNumber)) {
+      return Number(a.variantNumber) - Number(b.variantNumber);
+    }
+    var scoreDiff = Number(b.parentScore || 0) - Number(a.parentScore || 0);
+    if (Math.abs(scoreDiff) > 0.000001) return scoreDiff;
+    return String(a.sceneId).localeCompare(String(b.sceneId), undefined, { numeric: true });
+  }
+
+  function combineFamilyGroup(group, cfg) {
+    var memberMap = {};
+    var hasDuplicate = false;
+    var hasFilename = false;
+    var hasDuplicateNeighborhood = false;
+    var hasDescriptorFamily = false;
+    var minimumPHashDistanceValue = null;
+    var duplicateIndexes = [];
+    var filenameSimilarityScore = 0;
+    var metadataOverlapScore = 0;
+    var confidence = 0;
+    var identity = {};
+    group.forEach(function (family) {
+      var evidence = family.evidence || {};
+      hasDuplicate = hasDuplicate || !!evidence.stashDuplicateCluster;
+      hasDuplicateNeighborhood = hasDuplicateNeighborhood || !!evidence.duplicateNeighborhood;
+      hasDescriptorFamily = hasDescriptorFamily || !!evidence.descriptorFamily;
+      if (evidence.minimumPHashDistance !== null && evidence.minimumPHashDistance !== undefined) {
+        minimumPHashDistanceValue = minimumPHashDistanceValue === null
+          ? Number(evidence.minimumPHashDistance)
+          : Math.min(minimumPHashDistanceValue, Number(evidence.minimumPHashDistance));
+      }
+      hasFilename = hasFilename || evidence.source === "filename" || evidence.source === "combined";
+      if (evidence.duplicateClusterIndex !== null && evidence.duplicateClusterIndex !== undefined) duplicateIndexes.push(evidence.duplicateClusterIndex);
+      asArray(evidence.duplicateClusterIndexes).forEach(function (value) { duplicateIndexes.push(value); });
+      filenameSimilarityScore = Math.max(filenameSimilarityScore, Number(evidence.filenameSimilarity) || 0);
+      metadataOverlapScore = Math.max(metadataOverlapScore, Number(evidence.metadataOverlap) || 0);
+      confidence = Math.max(confidence, Number(family.confidence) || 0);
+      identity = mergeIdentity(identity, family.identity || {});
+      asArray(family.members).forEach(function (member) {
+        var id = String(member.sceneId);
+        if (!memberMap[id]) memberMap[id] = member;
+        else {
+          memberMap[id].isCanonicalOriginal = !!memberMap[id].isCanonicalOriginal || !!member.isCanonicalOriginal;
+          if (Number(member.parentScore) > Number(memberMap[id].parentScore)) memberMap[id].parentScore = member.parentScore;
+        }
+      });
+    });
+    var members = Object.keys(memberMap).map(function (id) { return memberMap[id]; });
+    members.sort(compareParentMembers);
+    filenameSimilarityScore = averagePairScore(members, function (a, b) {
+      return stemSimilarity(a.filenameStem, b.filenameStem);
+    });
+    var primary = members[0];
+    members.forEach(function (member) {
+      var isPrimary = String(member.sceneId) === String(primary.sceneId);
+      member.role = isPrimary ? "parent" : "child";
+      if (isPrimary) member.label = "Primary";
+      else if (!member.label || member.label === "Primary") member.label = (member.variantTokens && member.variantTokens[0]) || "Variant";
+    });
+    var sceneIds = members.map(function (member) { return String(member.sceneId); });
+    var evidence = {
+      stashDuplicateCluster: hasDuplicate,
+      duplicateNeighborhood: hasDuplicateNeighborhood,
+      descriptorFamily: hasDescriptorFamily,
+      source: hasDuplicateNeighborhood ? "duplicate_neighborhood" :
+        (hasDescriptorFamily ? "descriptor_family" :
+          (hasDuplicate && hasFilename ? "combined" : (hasDuplicate ? "stash_duplicate" : "filename"))),
+      duplicateClusterIndex: duplicateIndexes.length ? duplicateIndexes[0] : null,
+      duplicateClusterIndexes: uniq(duplicateIndexes.map(String)).map(Number),
+      filenameSimilarity: filenameSimilarityScore,
+      metadataOverlap: metadataOverlapScore,
+      sceneIds: sceneIds
+    };
+    if (minimumPHashDistanceValue !== null) {
+      evidence.minimumPHashDistance = minimumPHashDistanceValue;
+      evidence.constrainedPHashSupport = minimumPHashDistanceValue <= 12;
+    }
+    Object.assign(evidence, familyMediaEvidence(members, cfg));
+    confidence = familyConfidence(members, evidence, cfg);
+    confidence = Math.round(Math.min(1, confidence) * 1000) / 1000;
+    var status = familyStatus(confidence, cfg);
+    if ((hasDuplicateNeighborhood || hasDescriptorFamily) && status !== "ignore") status = "review";
+    if (status === "auto_suggest" && (!identity.artistKey || !identity.characterKey)) status = "review";
+    evidence.identityVerified = !!identity.artistKey && !!identity.characterKey;
+    return {
+      familyId: familyIdFor(sceneIds),
+      status: status,
+      confidence: confidence,
+      proposedPrimaryId: String(primary.sceneId),
+      members: members,
+      evidence: evidence,
+      identity: identity
+    };
+  }
+
+  function mergeFamilies(families, cfg) {
+    var eligible = asArray(families).filter(function (family) { return family && family.members && family.members.length > 1; });
+    var parent = eligible.map(function (_, index) { return index; });
+    function find(index) {
+      while (parent[index] !== index) {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
+      }
+      return index;
+    }
+    function union(a, b) {
+      var ra = find(a);
+      var rb = find(b);
+      if (ra !== rb) parent[rb] = ra;
+    }
+    var owner = {};
+    eligible.forEach(function (family, familyIndex) {
+      family.members.forEach(function (member) {
+        var id = String(member.sceneId);
+        if (!owner[id]) owner[id] = [];
+        owner[id].forEach(function (priorIndex) {
+          if (identityCompatible(family.identity, eligible[priorIndex].identity)) union(familyIndex, priorIndex);
+        });
+        owner[id].push(familyIndex);
+      });
+    });
+    var groups = {};
+    eligible.forEach(function (family, index) {
+      var root = String(find(index));
+      if (!groups[root]) groups[root] = [];
+      groups[root].push(family);
+    });
+    return Object.keys(groups).map(function (root) { return combineFamilyGroup(groups[root], cfg); }).sort(function (a, b) {
+      if (a.status !== b.status) {
+        var rank = { auto_suggest: 0, review: 1, ignore: 2 };
+        return rank[a.status] - rank[b.status];
+      }
+      return b.confidence - a.confidence;
+    });
+  }
+
+  function memberExistingPrimaryId(member) {
+    var summary = String(member && member.existingVariant || "");
+    if (summary === "primary") return String(member.sceneId);
+    var match = summary.match(/^variant_of_(.+)$/);
+    return match ? String(match[1]) : "";
+  }
+
+  function chooseExistingPrimary(family) {
+    var counts = {};
+    var primarySeen = {};
+    asArray(family && family.members).forEach(function (member) {
+      var primaryId = memberExistingPrimaryId(member);
+      if (!primaryId) return;
+      counts[primaryId] = (counts[primaryId] || 0) + 1;
+      if (String(member.existingVariant) === "primary") primarySeen[primaryId] = true;
+    });
+    var ids = Object.keys(counts);
+    ids.sort(function (a, b) {
+      if (counts[a] !== counts[b]) return counts[b] - counts[a];
+      if (!!primarySeen[a] !== !!primarySeen[b]) return primarySeen[a] ? -1 : 1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+    return {
+      primaryId: ids[0] || "",
+      primaryIds: ids,
+      ambiguous: ids.length > 1 && counts[ids[0]] === counts[ids[1]]
+    };
+  }
+
+  function actionableCandidateFamilies(families, cfg, runtime, sceneCache) {
+    var suppressedExisting = 0;
+    var suppressedSingletons = 0;
+    var cache = sceneCache || {};
+
+    function cachedScene(id) {
+      var key = String(id);
+      if (!cache[key]) {
+        try {
+          cache[key] = findScene(key, runtime);
+        } catch (err) {
+          logLine("WARN", "candidate family context unavailable for scene " + key + ": " + String(err && err.message || err), runtime);
+          return null;
+        }
+      }
+      return cache[key];
+    }
+
+    var shaped = [];
+    asArray(families).forEach(function (family) {
+      var unassigned = asArray(family.members).filter(function (member) {
+        return !memberExistingPrimaryId(member);
+      });
+      var target = chooseExistingPrimary(family);
+
+      if (!target.primaryId) {
+        if (!unassigned.length) {
+          suppressedExisting++;
+          return;
+        }
+        if (unassigned.length < 2) {
+          suppressedSingletons++;
+          return;
+        }
+        family.members = unassigned;
+        family.proposedPrimaryId = String((preferredMember(unassigned) || {}).sceneId || family.proposedPrimaryId);
+        family.members.forEach(function (member) {
+          var isPrimary = String(member.sceneId) === String(family.proposedPrimaryId);
+          member.role = isPrimary ? "parent" : "child";
+          member.relationshipState = "unassigned";
+          if (isPrimary) member.label = "Primary";
+        });
+        family.familyId = familyIdFor(unassigned.map(function (member) { return member.sceneId; }));
+        family.evidence.candidateType = "new_family";
+        family.evidence.candidateSceneIds = unassigned.map(function (member) { return String(member.sceneId); });
+        family.evidence.existingFamilySceneIds = [];
+        family.evidence.existingFamilyPrimaryId = "";
+        family.evidence.sceneIds = family.evidence.candidateSceneIds.slice();
+        shaped.push(family);
+        return;
+      }
+
+      var existingSceneMap = {};
+      target.primaryIds.forEach(function (primaryId) {
+        var primaryScene = cachedScene(primaryId);
+        if (!primaryScene) return;
+        existingSceneMap[String(primaryScene.id)] = primaryScene;
+        variantChildren(primaryScene).forEach(function (childId) {
+          var childScene = cachedScene(childId);
+          if (childScene) existingSceneMap[String(childScene.id)] = childScene;
+        });
+      });
+      var existingScenes = Object.keys(existingSceneMap).map(function (id) { return existingSceneMap[id]; });
+      if (!existingScenes.length) {
+        suppressedSingletons++;
+        return;
+      }
+      var expectedStems = {};
+      asArray(family.members).forEach(function (member) {
+        if (member.familyStem) expectedStems[String(member.familyStem)] = true;
+      });
+      var matchingExistingScenes = existingScenes.filter(function (scene) {
+        var identity = sceneVariantIdentity(scene);
+        return identityCompatible(identity, family.identity) && !!expectedStems[familyStemForScene(scene)];
+      });
+      var matchingExistingIds = {};
+      matchingExistingScenes.forEach(function (scene) { matchingExistingIds[String(scene.id)] = true; });
+      var excludedExistingScenes = existingScenes.filter(function (scene) {
+        return !matchingExistingIds[String(scene.id)];
+      });
+      var familyMemberIds = {};
+      asArray(family.members).forEach(function (member) { familyMemberIds[String(member.sceneId)] = true; });
+      matchingExistingScenes = matchingExistingScenes.filter(function (scene) {
+        return !!familyMemberIds[String(scene.id)];
+      });
+      var candidateScenes = unassigned.map(function (member) {
+        return cachedScene(member.sceneId);
+      }).filter(Boolean);
+      var originalIds = canonicalOriginalIds(matchingExistingScenes.concat(candidateScenes));
+      var existingMembers = matchingExistingScenes.map(function (scene) {
+        var member = variantMemberForScene(scene, target.primaryId, originalIds);
+        member.relationshipState = target.primaryIds.indexOf(String(scene.id)) !== -1 ? "existing_primary" : "existing_child";
+        return member;
+      });
+      var existingIds = {};
+      existingMembers.forEach(function (member) { existingIds[String(member.sceneId)] = true; });
+      var candidateMembers = unassigned.filter(function (member) {
+        return !existingIds[String(member.sceneId)];
+      }).map(function (member) {
+        member.relationshipState = "proposed_addition";
+        member.role = "child";
+        if (!member.label || member.label === "Primary") member.label = (member.variantTokens && member.variantTokens[0]) || "Variant";
+        return member;
+      });
+      var repairMembers = existingMembers.concat(candidateMembers);
+      var needsSplitRepair = excludedExistingScenes.length > 0 && existingMembers.length > 0;
+      if (!candidateMembers.length && !needsSplitRepair) {
+        suppressedExisting++;
+        return;
+      }
+      if (repairMembers.length < 2) {
+        suppressedSingletons++;
+        return;
+      }
+
+      family.members = repairMembers;
+      var recommended = preferredMember(family.members);
+      var recommendedId = String(recommended && recommended.sceneId || target.primaryId);
+      var candidateType = "attach_to_existing";
+      if (needsSplitRepair) candidateType = "split_existing_family";
+      else if (target.primaryIds.length > 1) candidateType = "merge_existing_families";
+      else if (recommendedId !== String(target.primaryId)) candidateType = "replace_existing_primary";
+      family.proposedPrimaryId = candidateType === "attach_to_existing" ? String(target.primaryId) : recommendedId;
+      family.members.forEach(function (member) {
+        var isPrimary = String(member.sceneId) === String(family.proposedPrimaryId);
+        member.role = isPrimary ? "parent" : "child";
+        if (isPrimary) member.label = "Primary";
+        else if (!member.label || member.label === "Primary") member.label = (member.variantTokens && member.variantTokens[0]) || "Variant";
+      });
+      var familyIdMembers = candidateType === "split_existing_family" ? family.members : candidateMembers;
+      family.familyId = "nsv2-existing-" + target.primaryIds.slice().sort(function (a, b) {
+        return a.localeCompare(b, undefined, { numeric: true });
+      }).join("-") + "-add-" + familyIdMembers.map(function (member) {
+        return String(member.sceneId);
+      }).sort(function (a, b) {
+        return a.localeCompare(b, undefined, { numeric: true });
+      }).join("-");
+      family.evidence.candidateType = candidateType;
+      family.evidence.candidateSceneIds = candidateMembers.map(function (member) { return String(member.sceneId); });
+      family.evidence.existingFamilySceneIds = existingMembers.map(function (member) { return String(member.sceneId); });
+      family.evidence.existingFamilyPrimaryId = String(target.primaryId);
+      family.evidence.existingFamilyPrimaryIds = target.primaryIds.map(String);
+      family.evidence.excludedExistingFamilySceneIds = excludedExistingScenes.map(function (scene) { return String(scene.id); });
+      family.evidence.replaceExistingChildren = candidateType === "split_existing_family";
+      family.evidence.approvalSceneIds = candidateType === "attach_to_existing"
+        ? family.evidence.candidateSceneIds.slice()
+        : family.members.filter(function (member) {
+          return String(member.sceneId) !== String(family.proposedPrimaryId);
+        }).map(function (member) { return String(member.sceneId); });
+      family.evidence.matchedSceneIds = asArray(family.evidence.sceneIds).map(String);
+      family.evidence.sceneIds = family.members.map(function (member) { return String(member.sceneId); });
+      family.evidence.alternateExistingFamilyPrimaryIds = target.primaryIds.filter(function (id) {
+        return String(id) !== String(target.primaryId);
+      });
+      if (candidateType !== "attach_to_existing" || target.ambiguous || family.evidence.alternateExistingFamilyPrimaryIds.length) family.status = "review";
+      shaped.push(family);
+    });
+
+    return {
+      families: shaped,
+      suppressedExisting: suppressedExisting,
+      suppressedSingletons: suppressedSingletons
+    };
+  }
+
+  function preferredMember(members) {
+    var sorted = asArray(members).slice().sort(compareParentMembers);
+    return sorted[0] || null;
+  }
+
+  function discoverVariantCandidates(options, runtime) {
+    var cfg = mergeConfig(options || {});
+    var families = [];
+    var clusters = [];
+    var sceneCache = {};
+    try {
+      clusters = findDuplicateVariantClusters(cfg, runtime);
+      clusters.forEach(function (cluster, index) {
+        asArray(cluster).forEach(function (scene) { sceneCache[String(scene.id)] = scene; });
+        partitionVariantCluster(cluster, cfg).forEach(function (partition) {
+          var family = buildVariantFamily(partition.scenes, "stash_duplicate", cfg, index);
+          if (family) families.push(family);
+        });
+      });
+    } catch (err) {
+      logLine("WARN", "duplicate scene discovery unavailable: " + String(err && err.message || err), runtime);
+    }
+
+    if (cfg.variantFilenameHeuristics) {
+      var filenameScenes = [];
+      var seenFilenameSceneIds = {};
+      clusters.forEach(function (cluster) {
+        asArray(cluster).forEach(function (scene) {
+          var id = String(scene.id);
+          if (!seenFilenameSceneIds[id]) {
+            seenFilenameSceneIds[id] = true;
+            filenameScenes.push(scene);
+          }
+        });
+      });
+      filenameVariantClusters(filenameScenes).forEach(function (cluster, index) {
+        partitionVariantCluster(cluster, cfg).forEach(function (partition) {
+          var family = buildVariantFamily(partition.scenes, "filename", cfg, index);
+          if (family && family.status !== "ignore") families.push(family);
+        });
+      });
+
+      try {
+        descriptorVariantFamilies(findAllScenesForVariantDiscovery(runtime, sceneCache), cfg).forEach(function (family) {
+          families.push(family);
+        });
+      } catch (descriptorErr) {
+        logLine("WARN", "descriptor family discovery unavailable: " +
+          String(descriptorErr && descriptorErr.message || descriptorErr), runtime);
+      }
+    }
+
+    duplicateSupportedNeighborhoodFamilies(families, cfg, runtime, sceneCache).forEach(function (family) {
+      families.push(family);
+    });
+    families = mergeFamilies(families, cfg);
+    var actionable = actionableCandidateFamilies(families, cfg, runtime, sceneCache);
+    families = actionable.families.slice(0, cfg.variantDiscoveryLimit);
+    logLine("INFO", "VARIANT_DISCOVERY families=" + families.length + " duplicateClusters=" + clusters.length +
+      " suppressedExisting=" + actionable.suppressedExisting + " suppressedSingletons=" + actionable.suppressedSingletons +
+      " dryRun=" + cfg.dryRun, runtime);
+    return {
+      result: "variant_candidates",
+      schema_version: 2,
+      dryRun: cfg.dryRun,
+      generatedAt: nowIso(),
+      settings: {
+        distance: cfg.variantDiscoveryDistance,
+        durationDiff: cfg.variantDiscoveryDurationDiff,
+        limit: cfg.variantDiscoveryLimit,
+        filenameHeuristics: cfg.variantFilenameHeuristics,
+        metadataHeuristics: cfg.variantMetadataHeuristics,
+        autoSuggestThreshold: cfg.variantAutoSuggestThreshold,
+        reviewThreshold: cfg.variantReviewThreshold
+      },
+      suppressedExistingFamilies: actionable.suppressedExisting,
+      suppressedSingletonSuggestions: actionable.suppressedSingletons,
+      families: families
+    };
   }
 
   function buildRuntimeIndex(runtime, cfg, aliasMap) {
@@ -853,6 +2333,229 @@ var SceneMetadataVariants = (function () {
     return { result: cfg.dryRun ? "dry_run" : "rebuilt", primaryId: String(primary.id), children: children };
   }
 
+  function parseApprovalsArg(args) {
+    var raw = getArg(args, "approvals", null);
+    if (raw === null || raw === undefined) raw = getArg(args, "approvalsJson", null);
+    if (raw === null || raw === undefined) raw = getArg(args, "families", null);
+    var parsed = parseJSONMaybe(raw, raw);
+    if (parsed && parsed.approvals) parsed = parsed.approvals;
+    if (parsed && parsed.families) parsed = parsed.families;
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  }
+
+  function approvalPrimaryId(approval) {
+    return String(approval.primarySceneId || approval.approvedPrimaryId || approval.proposedPrimaryId || "");
+  }
+
+  function approvalChildren(approval, primaryId) {
+    var children = [];
+    var rawChildren = approval.children || approval.approvedChildren || [];
+    if (!rawChildren.length && approval.members) {
+      rawChildren = approval.members.filter(function (member) {
+        return String(member.sceneId) !== String(primaryId) && member.include !== false && member.approved !== false;
+      });
+    }
+    asArray(rawChildren).forEach(function (child) {
+      var id = String(child.sceneId || child.childSceneId || child.id || "");
+      if (!id || id === String(primaryId) || child.include === false || child.approved === false) return;
+      children.push({
+        sceneId: id,
+        label: String(child.label || child.variantLabel || "Variant")
+      });
+    });
+    return children;
+  }
+
+  function applyOneVariantChild(primaryId, child, options, runtime) {
+    var childScene = findScene(child.sceneId, runtime);
+    var childCf = customFields(childScene);
+    if (childCf.variant_role === "variant" && childCf.variant_parent_id && String(childCf.variant_parent_id) !== String(primaryId)) {
+      return moveVariantToPrimary(child.sceneId, primaryId, Object.assign({}, options || {}, { label: child.label }), runtime);
+    }
+    return linkVariant(primaryId, child.sceneId, child.label, options, runtime);
+  }
+
+  function reconcileVariantFamily(primaryId, children, options, runtime) {
+    var cfg = mergeConfig(options || {});
+    var replaceExistingChildren = coerceBool(getArg(options, "replaceExistingChildren", false), false);
+    var primary = findScene(primaryId, runtime);
+    var initialPrimaryChildren = variantChildren(primary);
+    var childMap = {};
+    asArray(children).forEach(function (child) {
+      if (!child || !child.sceneId || String(child.sceneId) === String(primaryId)) return;
+      childMap[String(child.sceneId)] = {
+        sceneId: String(child.sceneId),
+        label: String(child.label || "Variant")
+      };
+    });
+
+    if (!replaceExistingChildren) {
+      initialPrimaryChildren.forEach(function (childId) {
+        if (!childMap[String(childId)]) childMap[String(childId)] = { sceneId: String(childId), label: "Variant" };
+      });
+    }
+
+    var loaded = {};
+    function load(id) {
+      var key = String(id);
+      if (!loaded[key]) loaded[key] = findScene(key, runtime);
+      return loaded[key];
+    }
+    loaded[String(primary.id)] = primary;
+
+    Object.keys(childMap).forEach(function (childId) {
+      var childScene = load(childId);
+      var childCf = customFields(childScene);
+      if (childCf.variant_label && childMap[childId].label === "Variant") {
+        childMap[childId].label = String(childCf.variant_label);
+      }
+      if (childCf.variant_role === "primary") {
+        variantChildren(childScene).forEach(function (grandchildId) {
+          if (!childMap[String(grandchildId)] && String(grandchildId) !== String(primaryId)) {
+            childMap[String(grandchildId)] = { sceneId: String(grandchildId), label: "Variant" };
+          }
+        });
+      }
+    });
+
+    var childIds = Object.keys(childMap).sort(function (a, b) {
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+    childIds.forEach(load);
+    var desired = {};
+    childIds.forEach(function (id) { desired[String(id)] = true; });
+    var affectedParents = {};
+    [primary].concat(childIds.map(function (id) { return loaded[id]; })).forEach(function (scene) {
+      var cf = customFields(scene);
+      if (cf.variant_role === "variant" && cf.variant_parent_id && String(cf.variant_parent_id) !== String(primaryId)) {
+        affectedParents[String(cf.variant_parent_id)] = true;
+      }
+    });
+    childIds.forEach(function (id) {
+      var scene = loaded[id];
+      if (customFields(scene).variant_role === "primary" && String(id) !== String(primaryId)) affectedParents[String(id)] = true;
+    });
+
+    if (cfg.dryRun) {
+      return {
+        result: "dry_run",
+        primaryId: String(primaryId),
+        children: childIds,
+        replacedPrimaryIds: Object.keys(affectedParents),
+        removedChildIds: replaceExistingChildren ? initialPrimaryChildren.filter(function (id) { return !desired[String(id)]; }) : []
+      };
+    }
+
+    Object.keys(affectedParents).forEach(function (parentId) {
+      if (String(parentId) === String(primaryId) || desired[String(parentId)]) return;
+      var oldParent = load(parentId);
+      var remaining = variantChildren(oldParent).filter(function (childId) {
+        return !desired[String(childId)] && String(childId) !== String(primaryId);
+      });
+      if (remaining.length) {
+        updateSceneFields(oldParent.id, {
+          variant_role: "primary",
+          variant_set_id: customFields(oldParent).variant_set_id || variantSetIdFor(oldParent.id),
+          variant_children: encodeChildren(remaining, cfg)
+        }, [], runtime, false);
+      } else {
+        updateSceneFields(oldParent.id, {}, ["variant_role", "variant_set_id", "variant_children"], runtime, false);
+      }
+    });
+
+    var setId = customFields(primary).variant_set_id || variantSetIdFor(primary.id);
+    updateSceneFields(primary.id, {
+      variant_role: "primary",
+      variant_set_id: setId,
+      variant_children: encodeChildren(childIds, cfg)
+    }, ["variant_parent_id", "variant_label", "variant_sort_index"], runtime, false);
+    removeHiddenTag(primary, cfg, runtime);
+
+    if (replaceExistingChildren) {
+      initialPrimaryChildren.filter(function (id) { return !desired[String(id)]; }).forEach(function (childId) {
+        var excludedChild = load(childId);
+        var excludedCf = customFields(excludedChild);
+        if (excludedCf.variant_role === "variant" && String(excludedCf.variant_parent_id || "") === String(primary.id)) {
+          updateSceneFields(childId, {}, ["variant_role", "variant_set_id", "variant_parent_id", "variant_label", "variant_sort_index"], runtime, false);
+          removeHiddenTag(excludedChild, cfg, runtime);
+        }
+      });
+    }
+
+    var summary = emptySummary();
+    childIds.forEach(function (childId, index) {
+      var childScene = loaded[childId];
+      updateSceneFields(childId, {
+        variant_role: "variant",
+        variant_set_id: setId,
+        variant_parent_id: String(primary.id),
+        variant_label: childMap[childId].label,
+        variant_sort_index: String(index + 1)
+      }, ["variant_children"], runtime, false);
+      addHiddenTag(childScene, cfg, runtime, summary);
+      updateSceneMetadataIfMissing(childScene, primary, cfg, runtime);
+    });
+    logLine("INFO", "VARIANT_RECONCILE primary=" + primary.id + " children=" + childIds.length +
+      " replacedPrimaries=" + Object.keys(affectedParents).join("|") + " dryRun=false", runtime);
+    return {
+      result: "reconciled",
+      primaryId: String(primary.id),
+      children: childIds,
+      replacedPrimaryIds: Object.keys(affectedParents)
+    };
+  }
+
+  function applyVariantBatch(options, runtime) {
+    var cfg = mergeConfig(options || {});
+    var approvals = parseApprovalsArg(options || {});
+    var confirmed = coerceBool(getArg(options, "confirmed", false), false);
+    if (!cfg.dryRun && !confirmed) {
+      throw new Error("Live variant batch apply requires confirmed=true");
+    }
+    var result = {
+      result: cfg.dryRun ? "dry_run" : "applied",
+      dryRun: cfg.dryRun,
+      families: 0,
+      links: 0,
+      failures: [],
+      operations: []
+    };
+
+    approvals.forEach(function (approval) {
+      if (!approval || approval.approved === false || approval.status === "ignored" || approval.status === "ignore") return;
+      var primaryId = approvalPrimaryId(approval);
+      var children = approvalChildren(approval, primaryId);
+      if (!primaryId || !children.length) return;
+      result.families++;
+      try {
+        var applied = reconcileVariantFamily(primaryId, children, Object.assign({}, options || {}, {
+          replaceExistingChildren: approval.replaceExistingChildren === true
+        }), runtime);
+        result.links += children.length;
+        children.forEach(function (child) {
+          result.operations.push({
+            familyId: String(approval.familyId || ""),
+            primarySceneId: String(primaryId),
+            childSceneId: String(child.sceneId),
+            label: child.label,
+            result: applied && applied.result || (cfg.dryRun ? "dry_run" : "reconciled")
+          });
+        });
+      } catch (err) {
+        result.failures.push({
+          familyId: String(approval.familyId || ""),
+          primarySceneId: String(primaryId),
+          childSceneId: "",
+          error: String(err && err.message || err)
+        });
+      }
+    });
+
+    logLine("INFO", "VARIANT_BATCH_APPLY families=" + result.families + " links=" + result.links + " failures=" + result.failures.length + " dryRun=" + cfg.dryRun, runtime);
+    return result;
+  }
+
   function validateVariantGraph(options, runtime) {
     var cfg = mergeConfig(options || {});
     var report = { errors: [], warnings: [], scenesChecked: 0, fixes: 0 };
@@ -944,6 +2647,9 @@ var SceneMetadataVariants = (function () {
     if (mode === "rename_variant") return renameVariant(getArg(args, "childSceneId") || getArg(args, "sceneId"), getArg(args, "label", "Variant"), args, runtime);
     if (mode === "reorder_variants") return reorderVariants(getArg(args, "primarySceneId"), parseJSONMaybe(getArg(args, "orderedChildIds", "[]"), []), args, runtime);
     if (mode === "rebuild_variant_set") return rebuildVariantSet(getArg(args, "primarySceneId") || getArg(args, "sceneId"), args, runtime);
+    if (mode === "discover_variant_candidates") return discoverVariantCandidates(args, runtime);
+    if (mode === "preview_variant_batch") return applyVariantBatch(Object.assign({}, args || {}, { dryRun: true }), runtime);
+    if (mode === "apply_variant_batch") return applyVariantBatch(args, runtime);
     if (mode === "validate_variant_graph") return validateVariantGraph(args, runtime);
     if (mode === "rollback_variants") return rollbackVariantData(args, runtime);
     throw new Error("Unknown mode: " + mode);
@@ -961,9 +2667,10 @@ var SceneMetadataVariants = (function () {
     return {};
   }
 
-  var GET_SCENE = "query FindSceneForMetadataVariants($id: ID!) { findScene(id: $id) { id title details custom_fields studio { id name aliases } groups { group { id name aliases } scene_index } tags { id name aliases parents { id name } } files { path basename } } }";
-  var FIND_SCENES = "query FindScenesForMetadataVariants($filter: FindFilterType) { findScenes(filter: $filter) { count scenes { id title details custom_fields studio { id name } groups { group { id name } scene_index } tags { id name } files { path basename } } } }";
+  var GET_SCENE = "query FindSceneForMetadataVariants($id: ID!) { findScene(id: $id) { id title details custom_fields studio { id name aliases } groups { group { id name aliases } scene_index } tags { id name aliases parents { id name } } files { path basename width height duration fingerprints { type value } } paths { screenshot preview webp vtt sprite } } }";
+  var FIND_SCENES = "query FindScenesForMetadataVariants($filter: FindFilterType) { findScenes(filter: $filter) { count scenes { id title details custom_fields studio { id name } groups { group { id name aliases } scene_index } tags { id name aliases } files { path basename width height duration fingerprints { type value } } paths { screenshot preview webp vtt sprite } } } }";
   var FIND_SCENES_WITH_CUSTOM_FIELDS = "query FindScenesWithCustomFields($filter: FindFilterType) { findScenes(filter: $filter) { count scenes { id title custom_fields tags { id name } } } }";
+  var FIND_DUPLICATE_SCENES = "query FindDuplicateScenesForMetadataVariants($distance: Int, $duration_diff: Float) { findDuplicateScenes(distance: $distance, duration_diff: $duration_diff) { id title details custom_fields studio { id name } groups { group { id name aliases } scene_index } tags { id name aliases } files { path basename width height duration fingerprints { type value } } paths { screenshot preview webp vtt sprite } } }";
   var FIND_STUDIOS = "query FindStudiosForMetadataVariants($studio_filter: StudioFilterType, $filter: FindFilterType) { findStudios(studio_filter: $studio_filter, filter: $filter) { count studios { id name aliases } } }";
   var FIND_GROUPS = "query FindGroupsForMetadataVariants($group_filter: GroupFilterType, $filter: FindFilterType) { findGroups(group_filter: $group_filter, filter: $filter) { count groups { id name aliases } } }";
   var FIND_TAGS = "query FindTagsForMetadataVariants($tag_filter: TagFilterType, $filter: FindFilterType) { findTags(tag_filter: $tag_filter, filter: $filter) { count tags { id name aliases parents { id name } } } }";
@@ -987,6 +2694,8 @@ var SceneMetadataVariants = (function () {
     renameVariant: renameVariant,
     reorderVariants: reorderVariants,
     rebuildVariantSet: rebuildVariantSet,
+    discoverVariantCandidates: discoverVariantCandidates,
+    applyVariantBatch: applyVariantBatch,
     validateVariantGraph: validateVariantGraph,
     rollbackVariantData: rollbackVariantData,
     dispatch: dispatch,
@@ -995,6 +2704,19 @@ var SceneMetadataVariants = (function () {
       variantChildren: variantChildren,
       encodeChildren: encodeChildren,
       currentSceneState: currentSceneState,
+      sceneVariantIdentity: sceneVariantIdentity,
+      identityCompatible: identityCompatible,
+      partitionVariantCluster: partitionVariantCluster,
+      canonicalParentInfo: canonicalParentInfo,
+      normalizedVariantStem: normalizedVariantStem,
+      terminalVariantNumberInfo: terminalVariantNumberInfo,
+      filenameSimilarity: filenameSimilarity,
+      sceneMediaCompatibility: sceneMediaCompatibility,
+      duplicateNeighborhoodCompatibility: duplicateNeighborhoodCompatibility,
+      partitionDuplicateNeighborhood: partitionDuplicateNeighborhood,
+      metadataSimilarity: metadataSimilarity,
+      parentScore: parentScore,
+      actionableCandidateFamilies: actionableCandidateFamilies,
       summaryString: summaryString
     },
     main: function () {
@@ -1010,7 +2732,8 @@ if (typeof module !== "undefined" && module.exports && typeof process !== "undef
 }
 
 if (typeof input !== "undefined" || typeof gql !== "undefined") {
-  SceneMetadataVariantsOutput = SceneMetadataVariants.main();
+  // Stash's JS interface reads only the final value's Output property.
+  SceneMetadataVariantsOutput = { Output: SceneMetadataVariants.main() };
 }
 
 SceneMetadataVariantsOutput;

@@ -18,9 +18,45 @@ It also lets you link alternate versions of a scene as variants:
 
 No files are moved, merged, deleted, or edited.
 
+## Nested Scene Variants V2 Discovery
+
+Use `Review Candidate Families` from a scene page's `Variant Set Manager` panel, `Variant Family Review` from the Scenes browse toolbar, or `Variant Sets: Discover Candidate Variants` from Settings -> Tasks. All three open the same interactive review window.
+
+The V2 scan is read-only. It uses:
+
+- Stash `findDuplicateScenes(distance, duration_diff)` duplicate clusters as the primary discovery source
+- normalized filename similarity for bridging duplicate-supported scenes
+- a review-only descriptor pass for exact artist, complete character signature, scene stem, explicit version, duration, and dimension matches
+- shared Studio, Groups, and Tags
+- duration, aspect-ratio, and available pHash compatibility
+- variant/downgrade tokens such as `preview`, `clip`, `loop`, `watermarked`, `silent`, `alt`, `v2`, and `cropped`
+
+While discovery runs, the review window shows an activity indicator and elapsed time. When it finishes, candidate families appear immediately with Suggested/Review classifications, confidence evidence, filters, title search, scene thumbnails, and links to open each scene. Hover a thumbnail, or focus it with the keyboard, to play Stash's existing generated preview. Numbered siblings are grouped only when supported by stronger duplicate or descriptor evidence, and overlapping compatible duplicate clusters are merged. Explicit `V1`, `V2`, and later scene versions remain separate. When an unnumbered original exists it is proposed as primary.
+
+Candidate families are constrained to one artist and one complete character set. Canonical Stash Groups and character Tags take priority over filename spelling, while standardized filename character fields prevent incomplete tags from combining different multi-character scenes. Reliable artist, character, explicit-version, duration, aspect-ratio, or pHash conflicts split candidates into separate families. Missing identity evidence is labeled `unresolved` and prevents automatic suggestion until reviewed. Filename similarity or a plain numeric suffix by itself never creates a candidate family. Descriptor-only families require recognizable signals such as `Std`, `Bonus`, `Alt`, `Nude`, `Loop`, `Vertical`, or `Phone` and are always presented for review rather than auto-suggested.
+
+Primary selection recognizes explicit main-version language. `Std`, `Standard`, and `Default` are strong selectors. `Regular`, `Normal`, and `Vanilla` are supporting evidence, while contextual terms such as `Full Version`, `Full Anim`, `Full Audio`, `Complete`, and `Uncut` indicate completeness. `Original`, `Base`, and `Main` are weaker evidence. Clear variant descriptors such as `POV`, `Bonus`, `Nude`, and `Old Version` still reduce parent suitability. Parent signals appear as green labels in the review window.
+
+The review window stores its draft in browser localStorage. Suggested results start approved; review and ignored results start unapproved. Click the yellow `Review` status, or another unapproved status badge, to change it to green `Approved`. Click `Approved` again to return the family to its previous review status. Every scene shown as a member is automatically included when that family is approved. The `Included` badge is informational rather than a second approval control. To correct a mistaken member, enable `Select Scenes`, select it, then use `Actions` -> `Remove Scenes From Families`. Use the Approval menu to approve all suggested families, approve or unapprove the visible filtered set, or clear every approval. The same cyan editing controls support merging families, moving scenes, creating a family from selected scenes, and removing selected families. Merge Families opens a search field and filters candidate families immediately as you type. You can also drag a family from any space that is not a link, thumbnail, button, or form control and drop it onto another family to merge them. Holding a dragged family near the top or bottom of the visible results scrolls the list smoothly. Editing selection never changes Apply approval. Manual edits unapprove only the affected family. Nothing is written to Stash while you edit the draft. Any edit clears the previous dry-run authorization. When approvals exist without a current preview, the live button reads `Preview Required`; click it to queue the dry run without losing the draft. After that succeeds, it changes to `Create Variant Sets`.
+
+Manual merge and add-scene controls reject scenes with a different known artist or character. Correct the scene's Stash metadata or filename first, then run discovery again if two scenes that should match are blocked.
+
+The review window opens at a viewport-aware size and can be resized by dragging any edge or corner. Its last size and position are stored in browser localStorage and constrained automatically if the browser window becomes smaller.
+
+To apply a reviewed family:
+
+1. Click the family status so it reads `Approved`.
+2. Confirm the proposed primary scene or select a different primary.
+3. Confirm the included members and edit child labels where needed.
+4. Click `Preview Approved Links`.
+5. Inspect the Stash task log for the queued dry-run job.
+6. Return to the review window and click `Create Variant Sets`.
+
+Live apply writes only the same plugin-owned variant custom fields used by manual V1 linking.
+
 ## Auto-Tagging
 
-Use the `Bulk auto-tag scenes` task.
+Use the `Variant Sets: Preview metadata backfill` task.
 
 Important defaults:
 
@@ -47,26 +83,34 @@ The plugin always reads the current scene first and sends merged final `groups` 
 
 ## Linking Variants From The UI
 
-Open a scene page and use the `Variants` panel. The panel is only shown on exact scene-player pages, and it should disappear when you return to the scene browsing grid.
+Open a scene page and use the `Variant Set Manager` panel. The panel is only shown on exact scene-player pages, and it should disappear when you return to the scene browsing grid.
 
-The panel has a `Dry run` checkbox that is enabled by default. Leave it checked to queue a preview task and inspect the Stash task log. Uncheck it only when you are ready to apply the relationship.
+Each family member is shown with its Stash screenshot. Hover or keyboard-focus the thumbnail to play Stash's generated multi-frame preview. Select any related scenes and choose `Add Selected`, or choose `Add All Variants` to append every other family member to the Session Scene Queue. The scene currently playing is shown for context but is not added again.
+
+The family list keeps the primary first and sorts numbered variants in ascending order. Queue actions use the same order. The full-width chevron at the bottom collapses or expands the manager; each newly opened scene starts expanded.
+
+Mouse over any Scene Variant control to see a short explanation. The same tooltip appears when the control receives keyboard focus.
+
+Queue controls require the optional `Session Scene Queue` companion plugin version `1.2.0` or later. The rest of the Scene Variant plugin remains available without it.
+
+The panel has a `Preview changes only` checkbox that is enabled by default. Leave it checked to queue a preview task and inspect the Stash task log. Uncheck it only when you are ready to apply the relationship.
 
 For a normal scene:
 
-- `Add Existing Scene` links another scene under the current scene.
-- `Add This Under Another` makes the current scene a child of another primary scene.
+- `Attach Child Scene` links another scene under the current scene.
+- `Nest This Scene` makes the current scene a child of another primary scene.
 
 For a primary scene:
 
-- linked variants appear as buttons
-- clicking a variant navigates to its normal scene page
+- linked variants appear as preview rows
+- clicking a variant title or thumbnail navigates to its normal scene page
 
 For a child variant:
 
 - the panel links back to the primary scene
 - sibling variants are listed
-- `Unlink` removes the relationship
-- `Promote` makes the child the new primary for the set
+- `Detach From Set` removes the relationship
+- `Make Set Primary` makes the child the new primary for the set
 
 Every destructive-looking action asks for confirmation. These operations only change Stash metadata and plugin-owned custom fields.
 
@@ -78,7 +122,9 @@ Nested child variants are hidden from the scene browsing page by default. To tem
 
 ## Linking Variants From Tasks
 
-Run `Link variant` with:
+Run `Variant Sets: Discover Candidate Variants` from Settings -> Tasks to open the interactive read-only discovery review.
+
+Run `Variant Sets: Attach child scene` with:
 
 ```text
 primarySceneId=<primary scene id>

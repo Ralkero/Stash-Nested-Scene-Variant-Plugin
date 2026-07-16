@@ -17,6 +17,7 @@ Current mock coverage:
 - Stash-style `input.args` values are honored for live task config
 - Stash v0.31.1 `input.Args` casing is honored for live task config
 - embedded JS runs `main()` in a Stash-like runtime even if `module` exists
+- embedded JS returns the `PluginOutput.Output` envelope required by Stash
 - variant linking updates both scenes
 - `Variant Hidden` is added additively
 - unlink removes only plugin-owned custom fields and the helper tag
@@ -25,8 +26,35 @@ Current mock coverage:
 - graph validation reports a child missing from its parent
 - graph validation scans beyond the normal bulk auto-tag discovery limit
 - rollback scans all variant pages and preserves unrelated scene metadata
+- V2 discovery ingests Stash duplicate clusters
+- V2 filename normalization strips quality and variant tokens
+- V2 parent selection favors canonical/full scenes over previews
+- V2 merges split duplicate clusters through numbered filename-family evidence and keeps the unnumbered original primary
+- V2 hard-splits mixed-artist and mixed-character duplicate clusters
+- canonical Stash Group and Tag aliases remain in the same family
+- `Std` and `Default` markers select the parent, including a lower-resolution standard scene
+- `Regular POV` remains a variant and contextual `Full` markers avoid title false positives
+- V2 descriptor families can be proposed for review without duplicate-cluster evidence only under exact identity, version, title, duration, dimension, and descriptor constraints
+- explicit `V1`, `V2`, and later markers remain separate discovery families
+- complete filename character signatures prevent incomplete Stash tags from combining different multi-character scenes
+- existing sets that mix explicit versions produce reviewable split-repair candidates
+- V2 duration and aspect-ratio checks split incompatible duplicate-cluster members
+- V2 suggested results initialize approved and included while review/ignored results remain unapproved
+- V2 approval and inclusion controls are visually and behaviorally separate from editing selection
+- V2 explicit approval choices persist when the exact family reappears after discovery
+- V2 multi-scene editing uses a selection-gated Actions menu
+- V2 merge-family search filters candidates on each input event
+- V2 batch dry run previews approved links without mutation
+- V2 live batch apply requires explicit confirmation
 - the UI task runner includes the actual Stash plugin ID from `scene-metadata-variants-v1.yml`
 - the UI exposes a persistent dry-run mode and does not force live writes
+- the UI stores V2 review drafts in browser localStorage
+- the UI exposes manual merge, add, remove, create-family, and delete-draft corrections
+- every review edit invalidates the previous dry-run gate
+- the UI uses `runPluginOperation` for immediate discovery results
+- the Settings -> Tasks discovery action opens interactive review instead of queuing a result-less background job
+- discovery shows an activity indicator, elapsed time, filters, search, and scene links
+- candidate rows reuse Stash screenshots and lazy generated preview videos on hover/focus
 - the scene page panel is removed outside exact scene-player routes
 - the scene browsing UI exposes a footer variant dropdown and no longer renders the old thumbnail-corner badge
 - nested variant card hiding and the show/hide toggle hooks are present in the UI bundle
@@ -38,7 +66,7 @@ Use a small set of scenes first.
 ### Auto-Tag Dry Run
 
 1. Select 1-3 scenes.
-2. Run `Bulk auto-tag scenes`.
+2. Run `Variant Sets: Preview metadata backfill`.
 3. Keep `dryRun: true`.
 4. Confirm logs include:
 
@@ -57,14 +85,32 @@ Use a small set of scenes first.
 4. Confirm existing Groups and Tags were preserved.
 5. Confirm no Performer objects were created or modified.
 
-### Hook
+### Variant Candidate Discovery
 
-The `Scene.Create.Post` hook defaults to dry-run. Add one test scene through normal Stash scan/import and confirm the task log shows the hook re-fetching and evaluating the scene by ID.
+1. Open any scene page.
+2. Click `Review Candidate Families`, or run `Variant Sets: Discover Candidate Variants` from Settings -> Tasks.
+3. Confirm the review modal appears with a moving activity indicator and elapsed time.
+4. Confirm candidate families replace the progress state when discovery completes.
+5. Confirm each family shows confidence, source, filename similarity, metadata overlap, and direct scene links.
+6. Filter Suggested/Needs Review families and search by a scene title or ID.
+7. Change the primary selector for one family and confirm child rows update.
+8. Close and reopen the modal; the draft should persist from browser localStorage.
+
+### Batch Dry Run And Live Apply
+
+1. Approve one small candidate family.
+2. Click `Preview Approved Links`.
+3. Confirm Stash queues a `Variant Sets: Process approved families` dry-run job.
+4. Inspect the task log before live apply.
+5. Reopen the review modal and confirm `Create Variant Sets` is enabled only after the dry run.
+6. Apply one family live.
+7. Run `Variant Sets: Validate relationship graph`.
+8. If needed, use existing unlink/rollback tasks; rollback removes only plugin-owned variant fields.
 
 ### Variant Link
 
 1. Pick one primary scene and one child variant scene.
-2. Run `Link variant` with:
+2. Run `Variant Sets: Attach child scene` with:
 
    ```text
    primarySceneId=<primary id>
@@ -86,13 +132,13 @@ The `Scene.Create.Post` hook defaults to dry-run. Add one test scene through nor
 ### UI
 
 1. Open the primary scene page.
-2. Confirm the `Variants` panel lists linked variants.
-3. Confirm the `Dry run` checkbox is checked by default.
+2. Confirm the `Variant Set Manager` panel lists linked variants.
+3. Confirm the `Preview changes only` checkbox is checked by default.
 4. Click a variant and confirm it navigates to that scene page.
 5. Open the child scene page.
 6. Confirm the panel shows a primary link and sibling list.
 7. Return to the Scenes browsing page.
-8. Confirm the scene-page `Variants` panel disappears.
+8. Confirm the scene-page `Variant Set Manager` panel disappears.
 
 ### Scene Card Variant Dropdown
 
@@ -118,6 +164,8 @@ Checked against the local Stash v0.31.1 GraphQL endpoint on 2026-05-29:
 - `CustomFieldsInput` exposes `full`, `partial`, and `remove`
 - `SceneGroupInput` exposes `group_id` and `scene_index`
 - `runPluginTask` accepts `args_map`
+- `runPluginOperation` accepts `args`
+- `findDuplicateScenes(distance, duration_diff)` is available
 - the plugin loads with ID `scene-metadata-variants-v1`
 - dry-run `Validate variant graph` completed as job `5` with status `FINISHED`
 - dry-run `Link variant` completed as job `6` with status `FINISHED`, and scenes `2110` and `2109` remained unchanged afterward
