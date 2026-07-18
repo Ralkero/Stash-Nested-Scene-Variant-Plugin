@@ -1,4 +1,8 @@
 node_modules/
+docs/images/*-full.png
+docs/images/candidate-family-evidence.png
+docs/images/candidate-review-controls.png
+docs/images/discovery-progress.png
 .DS_Store
 Thumbs.db
 *.log

@@ -1,6 +1,6 @@
 name: Scene Variant Sets
 description: Discover, review, and manage related scene variants as explicit primary and child sets.
-version: 0.5.17
+version: 0.5.22
 interface: js
 exec:
   - scene-metadata-variants.js
@@ -103,7 +103,7 @@ tasks:
       dryRun: true
 
   - name: "Variant Sets: Make child primary"
-    description: Make a child scene the primary scene for its variant set.
+    description: Swap a child scene with the current primary while preserving every family member and position.
     defaultArgs:
       mode: promote_variant
       dryRun: true
@@ -164,6 +164,7 @@ tasks:
 
 ui:
   javascript:
+    - scene-metadata-variants.js
     - ui/scene-variants.js
   css:
     - ui/scene-variants.css

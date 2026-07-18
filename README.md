@@ -1,56 +1,159 @@
 # Scene Variant Sets
 
-Stash v0.31.1 plugin package for three workflows:
+Scene Variant Sets is a Stash v0.31.1 plugin for discovering, reviewing, and navigating alternate versions of the same scene without merging or deleting the underlying scene records or media files.
 
-- auto-tag scenes using the custom mapping `franchise -> Studio`, `artist -> Groups`, `characters -> Tags`
-- link alternate scene versions as variants while keeping every scene and file separate
-- discover likely variant families with Stash duplicate clusters plus filename/metadata evidence, then review and batch-apply them
+Version `0.5.22` combines three workflows:
 
-The plugin uses an embedded JavaScript task/hook engine plus a UI JavaScript panel. It does not write to SQLite, delete scenes, move files, merge files, or use Performers for artist metadata.
+- discover likely variant families using Stash duplicate fingerprints plus constrained filename and metadata evidence
+- review and correct those families before applying explicit primary/child relationships
+- browse, preview, queue, and promote variants directly from scene pages
 
-## Files
+The plugin also includes the original filename-driven metadata helper for mapping `franchise -> Studio`, `artist -> Group`, and `character -> Tag`.
 
-- `scene-metadata-variants-v1.yml` - Stash plugin manifest, settings, tasks, hook, UI assets
-- `scene-metadata-variants.js` - embedded JS task/hook engine
-- `ui/scene-variants.js` - scene-page panel, scene-card variant dropdown, and nested-variant visibility toggle
-- `ui/scene-variants.css` - UI styling
-- `tests/run-tests.js` - mock GraphQL test harness
-- `examples/aliases.example.json` - sample alias map shape for task args or future embedded seeds
-- `GRAPHQL.md` - exact GraphQL operations and schema assumptions
-- `INSTALL.md` - installation steps
-- `TESTING.md` - test and manual verification steps
-- `USER_GUIDE.md` - user-facing workflow guide
-- `ROLLBACK.md` - rollback and recovery procedures
-- `CHANGELOG.md` - release notes
+## Feature Overview
 
-## V2 Status
+### Assisted Variant Discovery
 
-V2 adds assisted candidate discovery and batch review on top of the V1 custom-field relationship model. The discovery scan is read-only. Stash's duplicate checker remains the strict primary source: filename evidence may bridge duplicate-supported scenes, but a similar title alone cannot create a family. A secondary descriptor pass can propose review-only families outside those clusters when scenes have the same complete artist and character identity, explicit version, normalized scene stem, compatible duration and dimensions, and recognized variant markers such as `Std`, `Bonus`, `Alt`, `Nude`, `Loop`, `Vertical`, or `Phone`. Plain numeric suffixes do not qualify as descriptor evidence. This secondary path uses only a constrained local pHash comparison and never raises the global duplicate distance. Every proposed family is constrained to one canonical artist and one complete character set, using Stash Groups/Tags plus standardized filename fields. Explicit `V1`, `V2`, and later identifiers remain separate family boundaries. Explicit main-version markers such as `Std`, `Standard`, and `Default` are preferred as primary; otherwise an unnumbered original is preferred. Review can safely rebuild a partial existing set around that stronger primary or split an existing set that incorrectly mixes explicit versions. Review rows reuse Stash's generated screenshots and preview videos for lazy hover previews. The viewport-aware review dialog can be resized from every edge or corner and remembers its bounds. Clicking a family's status badge changes it to `Approved`; clicking it again returns the family to review. Every scene present in the draft family is automatically included. Use `Select Scenes` and `Remove Scenes From Families` to correct mistaken membership. Families can also be dragged from any noninteractive area and dropped onto another family to merge them, with smooth edge scrolling for long result lists. Cyan editing checkboxes enable the Actions menu for searchable family merges, moving scenes, creating a family, and removing selected scenes or families. Draft review state is stored in browser localStorage, and approved batches must be queued as a dry run before live apply is enabled.
+- Uses Stash's `findDuplicateScenes(distance, duration_diff)` result as the strict primary signal.
+- Combines pHash distance, duration, dimensions, aspect ratio, filenames, Studios, Groups, Tags, and existing variant metadata.
+- Keeps every proposed family constrained to one canonical artist and one complete character set.
+- Recognizes variant descriptors including `Std`, `Standard`, `Default`, `Alt`, `Nude`, `Bonus`, `Loop`, `Vertical`, `Phone`, and explicit `V1`, `V2`, and later versions.
+- Prefers `Std`, `Standard`, or `Default` as the parent; otherwise prefers the unnumbered original, then the lowest numbered candidate.
+- Rejects unsupported title-only and numeric-only matches.
+- Can suggest repairs for partial existing sets and split sets that incorrectly mix explicit versions.
+- Suppresses already-linked families and unsupported one-scene suggestions from the review list.
 
-V1 remains implemented, mock-tested, and smoke-tested against the local Stash v0.31.1 GraphQL endpoint. The live schema check confirmed `custom_fields.partial/remove`, `SceneGroupInput`, `runPluginTask(args_map)`, `runPluginOperation(args)`, `findDuplicateScenes(distance, duration_diff)`, and Stash's embedded `input.Args` casing. Dry-run validate/link tasks completed successfully, and a real link/unlink smoke test wrote and then removed variant custom fields on scenes `2110` and `2109`. Still use `dryRun: true` first for new workflows or larger batches.
+Discovery is read-only. The review window reports measured stages and elapsed time instead of an indeterminate animation.
 
-The scene-page `Variant Set Manager` panel is only mounted on exact scene-player routes such as `/scenes/123`. It is removed when returning to browsing pages. Scene browsing cards use a footer dropdown next to the normal Tags/Groups indicators; the old thumbnail-corner `N variants` badge has been removed. Nested child variants are hidden from scene browsing by default, with a best-effort `Show nested variants` toggle injected into the Scenes toolbar ellipsis menu.
+![Measured candidate discovery progress](docs/images/discovery-progress-public.png)
 
-On scene-player pages, every member of the current variant family is shown with its Stash screenshot and generated hover preview. Related scenes can be selected individually and added to the Session Scene Queue, or all other family members can be queued in one action. The currently playing scene remains visible but is not queued again.
+### Candidate Review And Correction
 
-Player families are displayed in numeric variant order with the primary first. The manager starts expanded and can be collapsed with the full-width chevron at its lower edge. Scene Variant controls throughout the player manager and candidate review expose descriptive mouse-hover and keyboard-focus tooltips.
+- Displays confidence, filename overlap, metadata overlap, media checks, artist, character, and parent-selection evidence.
+- Filters candidate families by status and searches by scene title or ID.
+- Approves a family by changing its `Review` status to `Approved`; bulk approval controls are also available.
+- Keeps approval separate from scene selection used for editing operations.
+- Supports manual family creation, adding scenes, moving selected scenes, removing mistaken members, and deleting draft families.
+- Merges families through the searchable actions menu or by dragging one family card onto another.
+- Allows the proposed primary and per-child labels to be corrected before apply.
+- Automatically includes every scene added to a family; membership does not require a second checkbox gate.
+- Persists the entire review draft in browser `localStorage`, including manual corrections and approvals.
+- Shows Stash screenshots and lazy hover previews while reviewing.
+- Uses a resizable, viewport-aware dialog that remembers its size and position.
 
-The queue buttons require the optional companion plugin `Session Scene Queue` version `1.2.0` or later. All other Scene Variant features work without it.
+Media thumbnails in this public screenshot are intentionally masked; the live UI uses Stash's generated screenshots and previews.
 
-The manifest is intentionally named `scene-metadata-variants-v1.yml` because Stash uses the YAML filename as the plugin ID. A generic `plugin.yml` filename can collide with other manually installed plugins.
+![Candidate family evidence and correction controls](docs/images/candidate-family-review.png)
 
-## Key Safety Defaults
+### Dry-Run-First Apply
+
+- Requires an explicit dry-run preview before `Create Variant Sets` is enabled.
+- Invalidates the previous dry-run whenever the draft is edited.
+- Applies only approved families.
+- Reuses the existing link, move, rebuild, and promote operations instead of maintaining a second relationship model.
+- Provides graph validation and plugin-owned metadata rollback tasks.
+- Never merges scene files, deletes scenes, moves media, or writes directly to SQLite.
+
+Applied relationships use these Stash custom fields:
+
+- `variant_role`
+- `variant_set_id`
+- `variant_children`
+- `variant_parent_id`
+- `variant_label`
+- `variant_sort_index`
+
+### Scene Player Variant Manager
+
+- Appears on every parent or child scene in an applied family.
+- Keeps the complete family visible when navigating from one variant to another.
+- Sorts the primary first and numbered variants in numeric order.
+- Shows generated thumbnails with Stash's multi-frame hover previews.
+- Selects individual variants or queues all other variants through the optional Session Scene Queue companion plugin.
+- Promotes any child with `Make Set Primary`, swapping it with the old primary without dropping family members or labels.
+- Supports attach, nest, unlink, rename, reorder, rebuild, and validation operations.
+- Starts expanded and collapses behind a full-width chevron.
+- Provides mouse and keyboard tooltips for plugin controls.
+
+Media thumbnails are masked below; titles, roles, queue selection, and manager layout are unchanged.
+
+![Variant Set Manager on a scene player page](docs/images/player-variant-manager.png)
+
+### Scenes Page Integration
+
+- Hides nested child variants by default so browsing emphasizes primary scenes.
+- Adds `Show nested variants` / `Hide nested variants` to the Scenes toolbar ellipsis menu.
+- Uses Stash's native `custom_fields.variant_role != variant` query before pagination.
+- Preserves accurate totals, configured page sizes, search criteria, sorting, and unrelated filters.
+- Adds a compact variant dropdown to primary scene cards instead of overlaying the thumbnail.
+
+The active native filter remains visible in Stash, and a 40-scene page remains a truthful 40-scene page.
+
+![Native nested-variant filter with accurate pagination](docs/images/nested-variants-filter.png)
+
+### Filename Metadata Helper
+
+- Parses standardized filenames to identify franchise, artist, and canonical characters.
+- Adds or reuses Stash Studios, Groups, and Tags according to configured safety settings.
+- Merges helper tags with existing tags instead of replacing unrelated metadata.
+- Supports aliases and dry-run output for ambiguous mappings.
+- Does not use Performers for artist metadata.
+
+## Typical Workflow
+
+1. Open a scene page and choose **Review Candidate Families**, or run **Variant Sets: Discover Candidate Variants** from Settings -> Tasks.
+2. Let the read-only discovery stages finish.
+3. Review evidence, correct primary choices or membership, and approve the desired families.
+4. Choose **Preview Approved Links** and inspect the Stash task log.
+5. Choose **Create Variant Sets** only after the preview is ready.
+6. Use **Validate variant graph** after a large batch.
+
+## Safety Defaults
 
 - `dryRun: true`
 - `createMissingTags: false`
 - `createMissingGroups: false`
 - `createMissingStudios: false`
 - `allowOverwrite: false`
-- `variantScanLimit: 0`, meaning validate/rollback scans all variant pages instead of inheriting the small bulk auto-tag discovery limit
-- `variantDiscoveryDistance: 4`, the maximum pHash distance requested from Stash and accepted by direct media checks
-- `variantDiscoveryDurationDiff: 2`, the maximum duration difference in seconds
-- `variantDiscoveryLimit: 200`, bounding the candidate families returned to the review UI
-- scene-create hook is not registered; run manual dry-run tasks after scans/imports
-- helper tags are merged with existing character tags
-- variant custom fields are updated with `partial` / `remove`
-- candidate drafts are local browser state until an approved batch is explicitly applied
+- `variantScanLimit: 0`, so validation and rollback scan every variant page
+- `variantDiscoveryDistance: 4`
+- `variantDiscoveryDurationDiff: 2`
+- `variantDiscoveryLimit: 200`
+- no automatic scene-create hook
+- no draft candidate fields written to scenes
+- no file deletion, movement, merge, or direct SQLite access
+
+## Installation
+
+Copy the plugin folder to Stash's plugin directory and reload plugins. Keep the manifest filename as `scene-metadata-variants-v1.yml`; Stash uses that filename as the plugin ID.
+
+The queue controls require the optional `Session Scene Queue` plugin version `1.2.0` or later. Discovery, review, linking, thumbnails, sorting, and player navigation work without it.
+
+See [INSTALL.md](INSTALL.md) for the complete installation and configuration steps.
+
+## Repository Guide
+
+- `scene-metadata-variants-v1.yml` - Stash manifest, settings, tasks, and UI assets
+- `scene-metadata-variants.js` - embedded task engine and shared discovery logic
+- `ui/scene-variants.js` - scene manager, browse integration, and candidate review UI
+- `ui/scene-variants.css` - plugin styling
+- `tests/run-tests.js` - mock GraphQL regression suite
+- `GRAPHQL.md` - GraphQL operations and schema assumptions
+- `TESTING.md` - automated and manual verification
+- `USER_GUIDE.md` - detailed user workflow
+- `ROLLBACK.md` - rollback and recovery procedures
+- `CHANGELOG.md` - version history
+
+## Verification
+
+The current suite covers discovery grouping, parent selection, identity boundaries, existing-family repair, dry-run safety, apply confirmation, primary promotion, browse filtering, browser-local discovery loading, and UI source contracts.
+
+Run:
+
+```powershell
+node --check scene-metadata-variants.js
+node --check ui/scene-variants.js
+node tests/run-tests.js
+```
+
+The installed `0.5.22` build passes all 51 tests and has been verified against the live Stash v0.31.1 GraphQL endpoint.

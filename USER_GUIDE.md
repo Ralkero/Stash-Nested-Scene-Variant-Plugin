@@ -31,7 +31,7 @@ The V2 scan is read-only. It uses:
 - duration, aspect-ratio, and available pHash compatibility
 - variant/downgrade tokens such as `preview`, `clip`, `loop`, `watermarked`, `silent`, `alt`, `v2`, and `cropped`
 
-While discovery runs, the review window shows an activity indicator and elapsed time. When it finishes, candidate families appear immediately with Suggested/Review classifications, confidence evidence, filters, title search, scene thumbnails, and links to open each scene. Hover a thumbnail, or focus it with the keyboard, to play Stash's existing generated preview. Numbered siblings are grouped only when supported by stronger duplicate or descriptor evidence, and overlapping compatible duplicate clusters are merged. Explicit `V1`, `V2`, and later scene versions remain separate. When an unnumbered original exists it is proposed as primary.
+While discovery runs, the review window reports a determinate percentage and the active phase: duplicate evidence, library descriptors, or family reconciliation. The percentage advances when a phase completes and after each real page of scene metadata loads; elapsed time updates independently. When discovery finishes, candidate families appear immediately with Suggested/Review classifications, confidence evidence, filters, title search, scene thumbnails, and links to open each scene. Hover a thumbnail, or focus it with the keyboard, to play Stash's existing generated preview. Numbered siblings are grouped only when supported by stronger duplicate or descriptor evidence, and overlapping compatible duplicate clusters are merged. Explicit `V1`, `V2`, and later scene versions remain separate. When an unnumbered original exists it is proposed as primary.
 
 Candidate families are constrained to one artist and one complete character set. Canonical Stash Groups and character Tags take priority over filename spelling, while standardized filename character fields prevent incomplete tags from combining different multi-character scenes. Reliable artist, character, explicit-version, duration, aspect-ratio, or pHash conflicts split candidates into separate families. Missing identity evidence is labeled `unresolved` and prevents automatic suggestion until reviewed. Filename similarity or a plain numeric suffix by itself never creates a candidate family. Descriptor-only families require recognizable signals such as `Std`, `Bonus`, `Alt`, `Nude`, `Loop`, `Vertical`, or `Phone` and are always presented for review rather than auto-suggested.
 
@@ -110,7 +110,7 @@ For a child variant:
 - the panel links back to the primary scene
 - sibling variants are listed
 - `Detach From Set` removes the relationship
-- `Make Set Primary` makes the child the new primary for the set
+- `Make Set Primary` swaps the child with the current primary; the former primary takes the child's previous position and no family members are removed
 
 Every destructive-looking action asks for confirmation. These operations only change Stash metadata and plugin-owned custom fields.
 
@@ -118,7 +118,9 @@ Every destructive-looking action asks for confirmation. These operations only ch
 
 On the scene browsing page, primary scenes with linked variants show a small chain-link dropdown beside the normal Tags and Groups indicators below the thumbnail. Open it to see the linked variants, then choose one to navigate to that scene.
 
-Nested child variants are hidden from the scene browsing page by default. To temporarily show them, open the Scenes toolbar ellipsis menu and use `Show nested variants`. The setting is stored in your browser local storage.
+Nested child variants are hidden on the scene browsing page by default. Open the Scenes toolbar ellipsis menu and choose `Show nested variants` to reveal them; choose `Hide nested variants` to collapse them again. The preference persists in browser local storage.
+
+The toggle changes a native Stash custom-field criterion in the Scenes URL. Stash excludes nested variants before calculating totals and pages, so a page configured for 40 results continues to display 40 matching scenes when enough results exist.
 
 ## Linking Variants From Tasks
 
@@ -180,14 +182,9 @@ The plugin does not allow:
 
 ## Hiding Child Variants
 
-V1 uses two layers for hiding child variants:
+V1 hides nested scene cards through Stash's native `custom_fields.variant_role != variant` filter and provides a toolbar toggle. The URL criterion preserves other browse filters and does not mutate scenes.
 
-- The UI script hides nested variant cards by default when it can read plugin variant metadata.
-- The `Variant Hidden` helper tag can still be used for a Stash-native saved filter.
-
-For the most reliable long-term setup, create a saved filter on the Scenes page that excludes the `Variant Hidden` tag, then set that saved filter as your default.
-
-This is safer than relying on deprecated default-filter mutations or fragile UI filtering patches.
+The optional `Variant Hidden` helper tag remains available to relationship tasks but is not required for browsing. The plugin does not create or change Stash's default saved filter.
 
 ## Known V1 Limitations
 

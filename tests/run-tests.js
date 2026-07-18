@@ -429,6 +429,44 @@ test("unlinkVariant removes plugin fields and hidden tag only", () => {
   assert.ok(!db.scenes["3"].tag_ids.includes("32"), "hidden tag removed");
 });
 
+test("promoteVariant swaps child and primary without losing family members", () => {
+  const seed = baseSeed();
+  seed.scenes["4"] = Object.assign({}, clone(seed.scenes["3"]), { id: "4", title: "Nude", tag_ids: ["31"], custom_fields: {} });
+  seed.scenes["5"] = Object.assign({}, clone(seed.scenes["3"]), { id: "5", title: "POV", tag_ids: ["31"], custom_fields: {} });
+  const db = makeDb(seed);
+  const runtime = makeRuntime(db);
+  plugin.linkVariant("2", "3", "Standard", { dryRun: false, createMissingTags: true }, runtime);
+  plugin.linkVariant("2", "4", "Nude", { dryRun: false, createMissingTags: true }, runtime);
+  plugin.linkVariant("2", "5", "POV", { dryRun: false, createMissingTags: true }, runtime);
+
+  const result = plugin.promoteVariantToPrimary("4", { dryRun: false, createMissingTags: true }, runtime);
+
+  assert.strictEqual(result.primaryId, "4");
+  assert.strictEqual(result.demotedPrimaryId, "2");
+  assert.deepStrictEqual(result.children, ["3", "2", "5"]);
+  assert.strictEqual(db.scenes["4"].custom_fields.variant_role, "primary");
+  assert.strictEqual(db.scenes["4"].custom_fields.variant_set_id, "set_scene_4");
+  assert.deepStrictEqual(JSON.parse(db.scenes["4"].custom_fields.variant_children), ["3", "2", "5"]);
+  assert.strictEqual(db.scenes["4"].custom_fields.variant_parent_id, undefined);
+  assert.strictEqual(db.scenes["4"].custom_fields.variant_label, undefined);
+  assert.strictEqual(db.scenes["4"].custom_fields.variant_sort_index, undefined);
+  assert.ok(!db.scenes["4"].tag_ids.includes("32"), "new primary should lose the hidden tag");
+
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_role, "variant");
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_parent_id, "4");
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_label, "Former Primary");
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_sort_index, "2");
+  assert.strictEqual(db.scenes["2"].custom_fields.variant_children, undefined);
+  assert.ok(db.scenes["2"].tag_ids.includes("32"), "former primary should receive the hidden tag");
+
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_parent_id, "4");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_label, "Standard");
+  assert.strictEqual(db.scenes["3"].custom_fields.variant_sort_index, "1");
+  assert.strictEqual(db.scenes["5"].custom_fields.variant_parent_id, "4");
+  assert.strictEqual(db.scenes["5"].custom_fields.variant_label, "POV");
+  assert.strictEqual(db.scenes["5"].custom_fields.variant_sort_index, "3");
+});
+
 test("linkVariant rejects self-link", () => {
   const db = makeDb(baseSeed());
   assert.throws(() => plugin.linkVariant("2", "2", "Bad", { dryRun: true }, makeRuntime(db)), /itself/);
@@ -537,6 +575,57 @@ test("variant discovery ingests Stash duplicate clusters as candidate families",
   assert.strictEqual(primary.media.height, 2160);
   assert.strictEqual(result.families[0].evidence.candidateType, "new_family");
   assert.deepStrictEqual(result.families[0].evidence.existingFamilySceneIds, []);
+});
+
+test("variant discovery reports monotonic measured backend progress", () => {
+  const db = makeDb(variantDiscoverySeed());
+  const runtime = makeRuntime(db);
+  const values = [];
+  runtime.log = { Progress(value) { values.push(Number(value)); } };
+  const result = plugin.discoverVariantCandidates({ dryRun: true }, runtime);
+  assert.ok(result.families.length > 0);
+  assert.ok(values.length > 6, "expected progress updates across discovery phases");
+  assert.strictEqual(values[values.length - 1], 1);
+  assert.ok(values.some(value => value > 0 && value < 1), "expected measured intermediate progress");
+  values.forEach((value, index) => {
+    if (index) assert.ok(value >= values[index - 1], `progress regressed from ${values[index - 1]} to ${value}`);
+  });
+  assert.strictEqual(countMutations(db), 0);
+});
+
+test("staged evidence-fed discovery matches monolithic output without nested queries", () => {
+  const options = { dryRun: true, variantDiscoveryLimit: 50 };
+  const seed = variantDiscoverySeed();
+  const monolithic = plugin.discoverVariantCandidates(options, makeRuntime(makeDb(seed)));
+  const evidenceDb = makeDb(seed);
+  const clusters = evidenceDb.duplicates.map(cluster => cluster.map(id => sceneForGraphQL(evidenceDb, evidenceDb.scenes[id])));
+  const scenes = Object.keys(evidenceDb.scenes).map(id => sceneForGraphQL(evidenceDb, evidenceDb.scenes[id]));
+  const duplicateResult = plugin.discoverVariantCandidatesEvidencePhase(Object.assign({}, options, {
+    phase: "duplicates",
+    duplicateClustersJson: JSON.stringify(clusters)
+  }), makeRuntime(evidenceDb));
+  const descriptorResult = plugin.discoverVariantCandidatesEvidencePhase(Object.assign({}, options, {
+    phase: "descriptors",
+    allScenesJson: JSON.stringify(scenes)
+  }), makeRuntime(evidenceDb));
+  const result = plugin.discoverVariantCandidatesEvidencePhase(Object.assign({}, options, {
+    phase: "finalize",
+    duplicateClusterCount: clusters.length,
+    partialFamiliesJson: JSON.stringify(duplicateResult.families.concat(descriptorResult.families)),
+    duplicateClustersJson: JSON.stringify(clusters),
+    allScenesJson: JSON.stringify(scenes)
+  }), makeRuntime(evidenceDb));
+  function shape(output) {
+    return output.families.map(family => ({
+      ids: family.members.map(member => String(member.sceneId)).sort(),
+      primary: String(family.proposedPrimaryId),
+      status: family.status,
+      type: family.evidence.candidateType
+    })).sort((a, b) => a.ids.join(",").localeCompare(b.ids.join(","), undefined, { numeric: true }));
+  }
+  assert.deepStrictEqual(shape(result), shape(monolithic));
+  assert.strictEqual(countMutations(evidenceDb), 0);
+  assert.strictEqual(evidenceDb.calls.length, 0, "complete supplied evidence should avoid nested GraphQL calls");
 });
 
 test("variant discovery omits families that are already completely linked", () => {
@@ -1256,6 +1345,55 @@ test("variant batch can replace an existing primary without losing its children"
   assert.strictEqual(db.scenes["4136"].custom_fields.variant_parent_id, "4143");
 });
 
+test("UI nested-variant filtering preserves browse criteria and pagination", () => {
+  const uiSource = fs.readFileSync(path.join(__dirname, "..", "ui", "scene-variants.js"), "utf8");
+  const start = uiSource.indexOf("  function translateCriterionBraces");
+  const end = uiSource.indexOf("  function variantStatus", start);
+  assert.ok(start >= 0 && end > start, "nested filter helpers should be present");
+  const context = {
+    URLSearchParams,
+    window: {
+      location: {
+        pathname: "/scenes",
+        search: "",
+        hash: ""
+      }
+    }
+  };
+  vm.runInNewContext(uiSource.slice(start, end), context);
+
+  const existing = context.encodeCriterionParam({
+    type: "custom_fields",
+    value: [{ field: "review_state", value: ["approved"], modifier: "EQUALS" }]
+  });
+  const initial = new URLSearchParams();
+  initial.set("sortby", "created_at");
+  initial.set("sortdir", "desc");
+  initial.set("perPage", "40");
+  initial.set("p", "3");
+  initial.append("c", existing);
+  context.window.location.search = "?" + initial.toString();
+
+  const hiddenSearch = context.nestedVariantSearch(false);
+  const hidden = new URLSearchParams(hiddenSearch);
+  assert.strictEqual(hidden.get("sortby"), "created_at");
+  assert.strictEqual(hidden.get("sortdir"), "desc");
+  assert.strictEqual(hidden.get("perPage"), "40");
+  assert.strictEqual(hidden.has("p"), false, "visibility changes should reset pagination");
+  const hiddenCriterion = context.parseCriterionParam(hidden.get("c"));
+  assert.strictEqual(hiddenCriterion.value.length, 2);
+  assert.ok(hiddenCriterion.value.some(value => value.field === "review_state"));
+  assert.ok(hiddenCriterion.value.some(value => value.field === "variant_role" && value.modifier === "NOT_EQUALS"));
+
+  context.window.location.search = hiddenSearch;
+  const shown = new URLSearchParams(context.nestedVariantSearch(true));
+  const shownCriterion = context.parseCriterionParam(shown.get("c"));
+  assert.strictEqual(shownCriterion.value.length, 1);
+  assert.strictEqual(shownCriterion.value[0].field, "review_state");
+  assert.strictEqual(context.hasNestedVariantExclusion("?" + hidden.toString()), true);
+  assert.strictEqual(context.hasNestedVariantExclusion("?" + shown.toString()), false);
+});
+
 test("UI task runner includes the Stash manifest plugin id", () => {
   const uiSource = fs.readFileSync(path.join(__dirname, "..", "ui", "scene-variants.js"), "utf8");
   const pluginIdsLine = uiSource.split(/\r?\n/).find(line => line.includes("var PLUGIN_IDS")) || "";
@@ -1268,7 +1406,11 @@ test("UI task runner includes the Stash manifest plugin id", () => {
   assert.ok(uiSource.includes("lastDryRunAt"), "UI should gate live apply behind a queued dry run");
   assert.ok(uiSource.includes("args.dryRun = false"), "UI should have an explicit live apply path after dry-run gating");
   assert.ok(uiSource.includes("scene-metadata-variants-show-nested"), "UI should persist the show/hide nested variants preference");
-  assert.ok(uiSource.includes("smv-hidden-variant-card"), "UI should hide child variant cards by default");
+  assert.ok(!uiSource.includes("smv-hidden-variant-card"), "UI should not hide cards after Stash paginates them");
+  assert.ok(!uiSource.includes("applyVariantVisibility"), "UI should leave scene-card visibility to the server-side filter");
+  assert.ok(uiSource.includes("nestedVariantSearch"), "UI should build a Stash-native nested-variant filter URL");
+  assert.ok(uiSource.includes('field: "variant_role", value: ["variant"], modifier: "NOT_EQUALS"'), "UI should exclude variant children through custom field filtering");
+  assert.ok(uiSource.includes("ensureNestedVariantFilterState"), "UI should enforce the persisted filter state on scene browse routes");
   assert.ok(uiSource.includes("smv-card-variant-menu"), "UI should render the card footer variants menu");
   assert.ok(uiSource.includes("bestMetadataRow"), "UI should target the existing metadata counter row");
   assert.ok(uiSource.includes("smv-metadata-row-fallback"), "UI should provide a metadata row fallback only when needed");
@@ -1311,7 +1453,13 @@ test("UI task runner includes the Stash manifest plugin id", () => {
   assert.ok(uiSource.includes("Preview Approved Links"), "dry-run action should be clearly differentiated from live apply");
   assert.ok(uiSource.includes("SCENE VARIANT SETS"), "scene panel should expose the plugin identity");
   assert.ok(uiSource.includes("Discovering candidate variants"), "discovery should expose an active progress state");
-  assert.ok(uiSource.includes("smv-discovery-spinner"), "discovery should render a visible activity indicator");
+  assert.ok(uiSource.includes("smv-discovery-percent"), "discovery should render a visible measured percentage");
+  assert.ok(uiSource.includes("findDuplicateScenesForReview"), "interactive discovery should query duplicate evidence directly");
+  assert.ok(uiSource.includes("findAllScenesForVariantReview"), "interactive discovery should report paged library scan progress");
+  assert.ok(uiSource.includes("discover_variant_candidates_evidence_phase"), "interactive discovery should reconcile collected evidence in bounded stages without nested GraphQL");
+  assert.ok(uiSource.includes("runLocalDiscoveryEvidencePhase"), "interactive discovery should avoid Stash's slow multi-megabyte operation argument boundary");
+  assert.ok(uiSource.includes('setAttribute("aria-valuenow"'), "discovery progress should expose its determinate value accessibly");
+  assert.ok(!uiSource.includes("setInterval(render, 250)"), "elapsed time must not repeatedly rebuild an indeterminate progress view");
   assert.ok(uiSource.includes("Filter by scene title or ID"), "candidate families should be searchable");
   assert.ok(uiSource.includes("All families"), "candidate families should expose status filters");
   assert.ok(uiSource.includes("setupDiscoveryTaskInterceptor"), "the Stash discovery task should open interactive review");
@@ -1366,7 +1514,9 @@ test("UI task runner includes the Stash manifest plugin id", () => {
   const cssSource = fs.readFileSync(path.join(__dirname, "..", "ui", "scene-variants.css"), "utf8");
   assert.ok(cssSource.includes("smv-button-preview"), "preview actions should have a dedicated visual treatment");
   assert.ok(cssSource.includes("smv-button-apply"), "live actions should have a dedicated visual treatment");
-  assert.ok(cssSource.includes("@keyframes smv-spin"), "discovery activity should be animated");
+  assert.ok(cssSource.includes(".smv-discovery-step.is-complete"), "completed discovery phases should have visible feedback");
+  assert.ok(!cssSource.includes("@keyframes smv-spin"), "discovery should not use a looping spinner");
+  assert.ok(!cssSource.includes("@keyframes smv-progress"), "discovery should not use an indeterminate looping bar");
   assert.ok(cssSource.includes(".smv-scene-thumbnail.is-previewing"), "preview video should visibly replace the still thumbnail while playing");
   assert.ok(cssSource.includes(".smv-review-modal.smv-resizable-modal"), "review modal should have a dedicated resizable layout");
   assert.ok(cssSource.includes(".smv-resize-se"), "review modal should expose a visible corner resize grip");
@@ -1428,9 +1578,11 @@ test("manifest, backend, and UI versions stay synchronized", () => {
   const backend = fs.readFileSync(path.join(__dirname, "..", "scene-metadata-variants.js"), "utf8");
   const ui = fs.readFileSync(path.join(__dirname, "..", "ui", "scene-variants.js"), "utf8");
   const version = (manifest.match(/^version:\s*([^\s]+)$/m) || [])[1];
-  assert.strictEqual(version, "0.5.17");
+  assert.strictEqual(version, "0.5.22");
   assert.ok(backend.includes(`var VERSION = "${version}"`));
   assert.ok(ui.includes(`var PLUGIN_VERSION = "${version}"`));
+  assert.ok(manifest.indexOf("- scene-metadata-variants.js") < manifest.indexOf("- ui/scene-variants.js"),
+    "the shared discovery engine must load before the review UI");
   assert.ok(backend.includes("SceneMetadataVariantsOutput = { Output: SceneMetadataVariants.main() }"));
 });
 
@@ -1440,6 +1592,16 @@ test("embedded script runs main in Stash-like context even when module exists", 
 
 test("embedded script runs main when Stash exposes module and process-like globals", () => {
   runEmbeddedEntrypointSmoke({ process: { versions: { node: "stash-goja" } } });
+});
+
+test("shared discovery engine loads safely in a browser-like context", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "scene-metadata-variants.js"), "utf8");
+  const context = { console };
+  vm.createContext(context);
+  vm.runInContext(source, context);
+  assert.ok(context.SceneMetadataVariants);
+  assert.strictEqual(typeof context.SceneMetadataVariants.discoverVariantCandidatesEvidencePhase, "function");
+  assert.strictEqual(context.SceneMetadataVariantsOutput, undefined);
 });
 
 let failed = 0;

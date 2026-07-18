@@ -51,9 +51,9 @@ Current mock coverage:
 - the UI stores V2 review drafts in browser localStorage
 - the UI exposes manual merge, add, remove, create-family, and delete-draft corrections
 - every review edit invalidates the previous dry-run gate
-- the UI uses `runPluginOperation` for immediate discovery results
+- the UI reads duplicate clusters and scene pages directly, then runs the shared evidence-only discovery engine in the browser
 - the Settings -> Tasks discovery action opens interactive review instead of queuing a result-less background job
-- discovery shows an activity indicator, elapsed time, filters, search, and scene links
+- discovery shows measured phase progress, a determinate percentage, elapsed time, filters, search, and scene links
 - candidate rows reuse Stash screenshots and lazy generated preview videos on hover/focus
 - the scene page panel is removed outside exact scene-player routes
 - the scene browsing UI exposes a footer variant dropdown and no longer renders the old thumbnail-corner badge
@@ -148,9 +148,11 @@ The old thumbnail-corner `N variants` badge should not appear.
 
 ### Nested Variant Visibility Toggle
 
-By default, child variant cards should be hidden on the Scenes browsing page. Open the toolbar ellipsis menu and use `Show nested variants`; child variant cards should appear. Toggle it again and they should hide.
+Load a Scenes result page that contains linked child variants. Confirm that child cards are hidden by default and that primary cards still show their variant-family dropdown.
 
-V1 limitation: Stash UI patching is experimental, so the dropdown and toolbar toggle are best-effort DOM integrations rather than guaranteed React component patches. The authoritative fallback hiding mechanism is the `Variant Hidden` saved filter.
+Set the page size to 40 and confirm that 40 non-nested scenes appear when enough results exist. Confirm that the displayed result total excludes nested variants.
+
+Open the Scenes toolbar ellipsis menu and choose `Show nested variants`; confirm that the custom-field URL criterion is removed and nested scenes appear. Toggle back to `Hide nested variants`, reload the page, and confirm the preference and URL criterion persist without losing unrelated search, sort, display, page-size, or custom-field criteria.
 
 ### Variant Maintenance Scan
 

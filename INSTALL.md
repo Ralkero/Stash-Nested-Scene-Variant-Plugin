@@ -56,18 +56,12 @@ ui/scene-variants.css
 
 After reload, open a scene page. A compact `Variant Set Manager` panel with a `VS` mark should appear near the scene content. If it does not appear, check the browser console and Stash plugin reload logs.
 
-On the Scenes browsing page, primary scene cards with variants should show a small chain-link dropdown beside the normal Tags and Groups indicators. Child variant cards are hidden by default; open the toolbar ellipsis menu and use `Show nested variants` to toggle them temporarily.
+On the Scenes browsing page, primary scene cards with variants should show a small chain-link dropdown beside the normal Tags and Groups indicators. Child variant cards are hidden by default; open the toolbar ellipsis menu and use `Show nested variants` to reveal them. The choice persists in browser local storage.
 
-## Saved Filter For Hidden Variants
+## Nested Variant Filtering
 
-V1 uses the helper tag `Variant Hidden` to hide child variants from normal browsing.
+The visibility toggle adds or removes a native Scenes filter for `custom_fields.variant_role != variant`. Stash applies this criterion before counting and pagination, so a 40-item page remains a truthful 40-item page while nested variants are hidden.
 
-Recommended setup:
+The filter is encoded in the Scenes URL alongside the current search, sort, display, page-size, and other criteria. The plugin does not create tags, change scene metadata, create a default saved filter, or use deprecated default-filter GraphQL mutations for this feature.
 
-1. Create or let the plugin create the `Variant Hidden` tag.
-2. Go to the Scenes page.
-3. Build a filter that excludes scenes with the `Variant Hidden` tag.
-4. Save it as something like `Scenes - hide variants`.
-5. Set that saved filter as your default Scenes page filter in Stash.
-
-The plugin does not use deprecated default-filter GraphQL mutations.
+Existing `Variant Hidden` helper tags remain supported by relationship maintenance tasks, but they are not required for browse-page visibility.

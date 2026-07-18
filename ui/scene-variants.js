@@ -2,9 +2,9 @@
   "use strict";
 
   var PLUGIN_IDS = ["scene-metadata-variants-v1", "stash-scene-metadata-variants-v1", "scene-metadata-variants", "Scene Metadata Variants", "Scene Variant Sets"];
-  var PLUGIN_VERSION = "0.5.17";
+  var PLUGIN_VERSION = "0.5.22";
   var DRY_RUN_KEY = "scene-metadata-variants-ui-dry-run";
-  var SHOW_NESTED_KEY = "scene-metadata-variants-show-nested";
+  var SHOW_NESTED_KEY = "scene-metadata-variants-show-nested-v2";
   var REVIEW_KEY_PREFIX = "scene-metadata-variants-v2-review:";
   var REVIEW_BOUNDS_KEY = "scene-metadata-variants-review-bounds-v1:";
   var DISCOVERY_MODEL_VERSION = 7;
@@ -127,6 +127,36 @@
     });
   }
 
+  function findDuplicateScenesForReview(settings) {
+    var query = "query FindDuplicateScenesForVariantReview($distance: Int, $duration_diff: Float) { findDuplicateScenes(distance: $distance, duration_diff: $duration_diff) { id title details custom_fields studio { id name } groups { group { id name aliases } scene_index } tags { id name aliases } files { path basename width height duration fingerprints { type value } } paths { screenshot preview webp vtt sprite } } }";
+    return gql(query, {
+      distance: Number(settings && settings.distance) || 8,
+      duration_diff: Number(settings && settings.durationDiff) || 2
+    }).then(function (data) {
+      return data && data.findDuplicateScenes || [];
+    });
+  }
+
+  function findAllScenesForVariantReview(onProgress) {
+    var query = "query FindScenesForVariantReview($filter: FindFilterType) { findScenes(filter: $filter) { count scenes { id title details custom_fields studio { id name } groups { group { id name aliases } scene_index } tags { id name aliases } files { path basename width height duration fingerprints { type value } } paths { screenshot preview webp vtt sprite } } } }";
+    var scenes = [];
+    var page = 1;
+    var perPage = 500;
+    function nextPage() {
+      return gql(query, { filter: { page: page, per_page: perPage, sort: "id", direction: "ASC" } }).then(function (data) {
+        var root = data && data.findScenes || {};
+        var batch = root.scenes || [];
+        scenes = scenes.concat(batch);
+        var total = Number(root.count) || scenes.length;
+        if (onProgress) onProgress(scenes.length, total);
+        if (batch.length < perPage || scenes.length >= total) return scenes;
+        page++;
+        return nextPage();
+      });
+    }
+    return nextPage();
+  }
+
   function runPluginTaskWithId(pluginId, taskName, args) {
     var query = "mutation RunVariantPluginTask($plugin_id: ID!, $task_name: String!, $args_map: Map) { runPluginTask(plugin_id: $plugin_id, task_name: $task_name, args_map: $args_map) }";
     return gql(query, { plugin_id: pluginId, task_name: taskName, args_map: args || {} });
@@ -161,6 +191,22 @@
       });
     }
     return attempt();
+  }
+
+  function runLocalDiscoveryEvidencePhase(args) {
+    return new Promise(function (resolve, reject) {
+      window.setTimeout(function () {
+        try {
+          if (typeof SceneMetadataVariants === "undefined" ||
+              typeof SceneMetadataVariants.discoverVariantCandidatesEvidencePhase !== "function") {
+            throw new Error("Local variant discovery engine is unavailable. Reload Stash plugins and refresh the page.");
+          }
+          resolve(SceneMetadataVariants.discoverVariantCandidatesEvidencePhase(args || {}, null));
+        } catch (err) {
+          reject(err);
+        }
+      }, 0);
+    });
   }
 
   function el(tag, className, text) {
@@ -230,7 +276,7 @@
     "attach child scene": "Search for a scene to link as a child variant of the current scene.",
     "nest this scene": "Choose a primary scene and make the current scene one of its variants.",
     "detach from set": "Remove the current scene from its variant family without deleting it.",
-    "make set primary": "Promote the current variant to primary and move its siblings under it.",
+    "make set primary": "Swap the current variant with the primary while preserving every family member and position.",
     "variant family review": "Open the Scene Variant candidate discovery and review window.",
     "show nested variants": "Show child variants alongside primary scenes on the scene browsing page.",
     "hide nested variants": "Hide child variants from the scene browsing page while keeping primary scenes visible."
@@ -479,6 +525,107 @@
 
   function setShowNestedVariants(value) {
     window.localStorage.setItem(SHOW_NESTED_KEY, value ? "true" : "false");
+  }
+
+  function translateCriterionBraces(value, toJson) {
+    var inString = false;
+    var escaped = false;
+    return String(value || "").split("").map(function (character) {
+      if (escaped) {
+        escaped = false;
+        return character;
+      }
+      if (character === "\\" && inString) {
+        escaped = true;
+        return character;
+      }
+      if (character === "\"") {
+        inString = !inString;
+        return character;
+      }
+      if (!inString) {
+        if (toJson && character === "(") return "{";
+        if (toJson && character === ")") return "}";
+        if (!toJson && character === "{") return "(";
+        if (!toJson && character === "}") return ")";
+      }
+      return character;
+    }).join("");
+  }
+
+  function parseCriterionParam(value) {
+    try {
+      return JSON.parse(translateCriterionBraces(value, true));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function encodeCriterionParam(value) {
+    return translateCriterionBraces(JSON.stringify(value), false);
+  }
+
+  function nestedVariantCriterion() {
+    return { field: "variant_role", value: ["variant"], modifier: "NOT_EQUALS" };
+  }
+
+  function isNestedVariantCriterion(value) {
+    return value && value.field === "variant_role" && value.modifier === "NOT_EQUALS" &&
+      Array.isArray(value.value) && value.value.indexOf("variant") >= 0;
+  }
+
+  function hasNestedVariantExclusion(search) {
+    var params = new URLSearchParams(search || "");
+    return params.getAll("c").some(function (raw) {
+      var criterion = parseCriterionParam(raw);
+      return criterion && criterion.type === "custom_fields" &&
+        Array.isArray(criterion.value) && criterion.value.some(isNestedVariantCriterion);
+    });
+  }
+
+  function nestedVariantSearch(showNested) {
+    var params = new URLSearchParams(window.location.search || "");
+    var encodedCriteria = params.getAll("c");
+    var rewritten = [];
+    var added = false;
+    params.delete("c");
+    encodedCriteria.forEach(function (raw) {
+      var criterion = parseCriterionParam(raw);
+      if (!criterion || criterion.type !== "custom_fields" || !Array.isArray(criterion.value)) {
+        rewritten.push(raw);
+        return;
+      }
+      criterion.value = criterion.value.filter(function (value) {
+        return !isNestedVariantCriterion(value);
+      });
+      if (!showNested && !added) {
+        criterion.value.push(nestedVariantCriterion());
+        added = true;
+      }
+      if (criterion.value.length) rewritten.push(encodeCriterionParam(criterion));
+    });
+    if (!showNested && !added) {
+      rewritten.push(encodeCriterionParam({ type: "custom_fields", value: [nestedVariantCriterion()] }));
+    }
+    rewritten.forEach(function (criterion) { params.append("c", criterion); });
+    params.delete("p");
+    var encoded = params.toString();
+    return encoded ? "?" + encoded : "";
+  }
+
+  function navigateNestedVariantFilter(showNested, replace) {
+    var target = window.location.pathname + nestedVariantSearch(showNested) + window.location.hash;
+    if (replace) window.location.replace(target);
+    else window.location.assign(target);
+  }
+
+  function ensureNestedVariantFilterState() {
+    if (!isScenesBrowseRoute()) return false;
+    var showNested = showNestedVariants();
+    var filtered = hasNestedVariantExclusion(window.location.search);
+    if ((showNested && !filtered) || (!showNested && filtered)) return false;
+    navigateNestedVariantFilter(showNested, true);
+    return true;
   }
 
   function variantStatus(scene) {
@@ -1382,6 +1529,14 @@
     var isDiscovering = false;
     var progressStartedAt = 0;
     var progressTimer = null;
+    var progressElapsedNode = null;
+    var discoveryProgress = {
+      percent: 0,
+      phase: "Preparing discovery",
+      detail: "Starting read-only scene analysis.",
+      completed: 0,
+      total: 3
+    };
     var familyDrag = null;
     var familyDragFrame = 0;
     var suppressFamilyClickUntil = 0;
@@ -1479,10 +1634,31 @@
     function stopProgressTimer() {
       if (progressTimer) window.clearInterval(progressTimer);
       progressTimer = null;
+      progressElapsedNode = null;
     }
 
     function elapsedSeconds() {
       return Math.max(0, (Date.now() - progressStartedAt) / 1000).toFixed(1);
+    }
+
+    function updateProgressElapsed() {
+      var elapsed = elapsedSeconds();
+      if (progressElapsedNode) progressElapsedNode.textContent = elapsed + "s elapsed";
+      status.textContent = "Discovering candidate variants | " + Math.round(discoveryProgress.percent) + "% | " + elapsed + "s elapsed";
+    }
+
+    function startProgressTimer() {
+      if (progressTimer) window.clearInterval(progressTimer);
+      updateProgressElapsed();
+      progressTimer = window.setInterval(updateProgressElapsed, 250);
+    }
+
+    function setDiscoveryProgress(percent, phase, detail, completed) {
+      discoveryProgress.percent = Math.max(0, Math.min(100, Number(percent) || 0));
+      discoveryProgress.phase = String(phase || discoveryProgress.phase);
+      discoveryProgress.detail = String(detail || discoveryProgress.detail);
+      discoveryProgress.completed = Math.max(0, Math.min(discoveryProgress.total, Number(completed) || 0));
+      render();
     }
 
     function markDraftChanged() {
@@ -1560,8 +1736,7 @@
     }
 
     function renderDiscoveryProgress() {
-      var elapsed = elapsedSeconds();
-      status.textContent = "Discovering candidate variants | " + elapsed + "s elapsed";
+      updateProgressElapsed();
       controls.classList.add("is-empty");
       visibleCount.textContent = "";
       scan.disabled = true;
@@ -1574,14 +1749,31 @@
       var progress = el("div", "smv-discovery-progress");
       progress.setAttribute("role", "status");
       progress.setAttribute("aria-live", "polite");
-      progress.appendChild(el("div", "smv-discovery-spinner"));
+      progress.appendChild(el("div", "smv-discovery-percent", Math.round(discoveryProgress.percent) + "%"));
       var copy = el("div", "smv-discovery-copy");
-      copy.appendChild(el("div", "smv-discovery-title", "Checking duplicate fingerprints and scene evidence"));
-      copy.appendChild(el("div", "smv-result-meta", "Candidate families will appear here when the scan completes."));
+      copy.appendChild(el("div", "smv-discovery-title", discoveryProgress.phase));
+      copy.appendChild(el("div", "smv-result-meta", discoveryProgress.detail));
+      progressElapsedNode = el("div", "smv-result-meta", elapsedSeconds() + "s elapsed");
+      copy.appendChild(progressElapsedNode);
       progress.appendChild(copy);
       var track = el("div", "smv-discovery-track");
-      track.appendChild(el("div", "smv-discovery-track-fill"));
+      track.setAttribute("role", "progressbar");
+      track.setAttribute("aria-label", "Variant discovery progress");
+      track.setAttribute("aria-valuemin", "0");
+      track.setAttribute("aria-valuemax", "100");
+      track.setAttribute("aria-valuenow", String(Math.round(discoveryProgress.percent)));
+      var fill = el("div", "smv-discovery-track-fill");
+      fill.style.width = discoveryProgress.percent + "%";
+      track.appendChild(fill);
       progress.appendChild(track);
+      var steps = el("div", "smv-discovery-steps");
+      ["Duplicate evidence", "Library descriptors", "Reconcile families"].forEach(function (label, index) {
+        var step = el("div", "smv-discovery-step", label);
+        if (index < discoveryProgress.completed) step.classList.add("is-complete");
+        else if (index === discoveryProgress.completed && discoveryProgress.completed < discoveryProgress.total) step.classList.add("is-current");
+        steps.appendChild(step);
+      });
+      progress.appendChild(steps);
       list.appendChild(progress);
     }
 
@@ -2289,10 +2481,66 @@
       editMode = false;
       isDiscovering = true;
       progressStartedAt = Date.now();
-      stopProgressTimer();
-      progressTimer = window.setInterval(render, 250);
+      discoveryProgress = {
+        percent: 0,
+        phase: "Checking duplicate evidence",
+        detail: "Comparing Stash fingerprints, durations, authors, characters, and filenames.",
+        completed: 0,
+        total: 3
+      };
       render();
-      runPluginOperation({ mode: "discover_variant_candidates", dryRun: true }).then(function (result) {
+      startProgressTimer();
+      var discoverySettings = null;
+      var duplicateClusters = [];
+      var allScenes = [];
+      runPluginOperation({ mode: "variant_discovery_settings", dryRun: true }).then(function (settings) {
+        discoverySettings = settings || {};
+        return findDuplicateScenesForReview(discoverySettings);
+      }).then(function (clusters) {
+        duplicateClusters = clusters || [];
+        return runLocalDiscoveryEvidencePhase({
+          mode: "discover_variant_candidates_evidence_phase",
+          phase: "duplicates",
+          dryRun: true,
+          duplicateClustersJson: JSON.stringify(duplicateClusters)
+        });
+      }).then(function (duplicateResult) {
+        var duplicateFamilies = duplicateResult && duplicateResult.families || [];
+        setDiscoveryProgress(33, "Scanning library descriptors",
+          "Found " + duplicateClusters.length + " duplicate clusters. Reading scene filenames and variant descriptors across the library.", 1);
+        return findAllScenesForVariantReview(function (completed, total) {
+          var ratio = Math.max(0, Math.min(1, completed / Math.max(1, total)));
+          setDiscoveryProgress(33 + (22 * ratio), "Scanning library descriptors",
+            "Read " + completed + " of " + total + " scenes from Stash.", 1);
+        }).then(function (scenes) {
+          return { scenes: scenes, duplicateFamilies: duplicateFamilies };
+        });
+      }).then(function (evidence) {
+        allScenes = evidence.scenes || [];
+        setDiscoveryProgress(55, "Analyzing library descriptors",
+          "Scene metadata loaded. Building filename and descriptor-supported families.", 1);
+        return runLocalDiscoveryEvidencePhase({
+          mode: "discover_variant_candidates_evidence_phase",
+          phase: "descriptors",
+          dryRun: true,
+          allScenesJson: JSON.stringify(allScenes)
+        }).then(function (descriptorResult) {
+          return evidence.duplicateFamilies.concat(descriptorResult && descriptorResult.families || []);
+        });
+      }).then(function (partialFamilies) {
+        setDiscoveryProgress(67, "Reconciling candidate families",
+          "Library scan complete. Merging overlapping evidence and excluding unsupported single-scene suggestions.", 2);
+        return runLocalDiscoveryEvidencePhase({
+          mode: "discover_variant_candidates_evidence_phase",
+          phase: "finalize",
+          dryRun: true,
+          duplicateClusterCount: duplicateClusters.length,
+          duplicateClustersJson: JSON.stringify(duplicateClusters),
+          partialFamiliesJson: JSON.stringify(partialFamilies),
+          allScenesJson: JSON.stringify(allScenes)
+        });
+      }).then(function (result) {
+        setDiscoveryProgress(100, "Discovery complete", "Candidate families are ready for review.", 3);
         stopProgressTimer();
         isDiscovering = false;
         state.lastDiscoveryAt = new Date().toISOString();
@@ -2590,7 +2838,7 @@
       }, "danger"));
       actions.appendChild(button("Make Set Primary", function () {
         var dryRun = uiDryRun();
-        if (!window.confirm((dryRun ? "Dry-run promote this variant to primary?" : "Promote this variant to primary?") + " This does not delete files or scenes.")) return;
+        if (!window.confirm((dryRun ? "Dry-run swapping this variant with the current primary?" : "Swap this variant with the current primary?") + " Every family member and position will be preserved.")) return;
         runPluginTask(TASKS.promote, { mode: "promote_variant", dryRun: dryRun, childSceneId: String(scene.id) }).then(function (data) {
           afterTask(data, dryRun);
         }).catch(alert);
@@ -2873,24 +3121,11 @@
     });
   }
 
-  function applyVariantVisibility(card, scene) {
-    if (!card) return;
-    var isChild = customFields(scene).variant_role === "variant";
-    if (isChild && !showNestedVariants()) {
-      card.classList.add("smv-hidden-variant-card");
-      card.setAttribute("data-smv-hidden-variant", "true");
-    } else {
-      card.classList.remove("smv-hidden-variant-card");
-      if (card.getAttribute("data-smv-hidden-variant") === "true") card.removeAttribute("data-smv-hidden-variant");
-    }
-  }
-
   function addVariantMenuToCard(anchor, scene) {
     var cf = customFields(scene);
     var count = variantChildren(scene).length;
     var card = cardForAnchor(anchor);
     if (!card) return;
-    applyVariantVisibility(card, scene);
     if (cf.variant_role !== "primary" || !count || card.querySelector(".smv-card-variant-menu")) return;
     var footer = ensureMetadataRow(card) || cardFooter(card);
     var menu = el("span", "smv-card-variant-menu");
@@ -2942,15 +3177,12 @@
   }
 
   function toggleNestedVariantVisibility() {
-    setShowNestedVariants(!showNestedVariants());
-    Array.prototype.forEach.call(document.querySelectorAll("[data-smv-hidden-variant='true'], .smv-hidden-variant-card"), function (card) {
-      card.classList.remove("smv-hidden-variant-card");
-      card.removeAttribute("data-smv-hidden-variant");
-    });
-    setupCardVariantMenus();
+    var next = !showNestedVariants();
+    setShowNestedVariants(next);
+    navigateNestedVariantFilter(next, false);
   }
 
-  function menuText() {
+  function nestedVariantMenuText() {
     return showNestedVariants() ? "Hide nested variants" : "Show nested variants";
   }
 
@@ -2962,13 +3194,15 @@
       if (container.classList && container.classList.contains("smv-variant-dropdown")) return;
       if (container.closest && container.closest(".smv-card-variant-menu")) return;
       if (container.querySelector(".smv-variant-option")) return;
-      var item = el("button", "smv-show-nested-toggle", menuText());
+      var item = el("button", "smv-show-nested-toggle", nestedVariantMenuText());
       item.type = "button";
+      item.title = buttonTooltip(nestedVariantMenuText());
       item.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
         toggleNestedVariantVisibility();
-        item.textContent = menuText();
+        item.textContent = nestedVariantMenuText();
+        item.title = buttonTooltip(nestedVariantMenuText());
       });
       container.appendChild(item);
     });
@@ -2985,7 +3219,7 @@
     ];
     for (var i = 0; i < selectors.length; i++) {
       var found = document.querySelector(selectors[i]);
-      if (found && !found.querySelector(".smv-browse-discovery")) return found;
+      if (found) return found;
     }
     return null;
   }
@@ -3012,6 +3246,8 @@
       var target = event.target;
       var button = target && target.closest && target.closest("button, .btn, [role='button']");
       if (!button) return;
+      var toolbar = browseToolbarContainer();
+      if (!toolbar || !toolbar.contains(button)) return;
       var text = (button.textContent || "").trim();
       var label = button.getAttribute("aria-label") || button.getAttribute("title") || "";
       var hasIcon = !!button.querySelector("svg, i, .fa, .svg-inline--fa");
@@ -3039,6 +3275,7 @@
   }
 
   function refresh() {
+    if (ensureNestedVariantFilterState()) return;
     scheduleScenePageSetup(0);
     setupCardVariantMenus();
     ensureBrowseDiscoveryEntry();
@@ -3062,7 +3299,6 @@
         removePanel();
       }
       setupCardVariantMenus();
-      injectEllipsisMenuToggle(document);
       ensureBrowseDiscoveryEntry();
     });
     observer.observe(document.body, { childList: true, subtree: true });

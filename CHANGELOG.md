@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.5.22
+
+- Reworked the main README into a complete feature guide with public-safe live screenshots of discovery, review, player navigation, and nested browse filtering.
+- Replaced the looping discovery spinner and indeterminate bar with a determinate percentage, phase labels, completed-step indicators, and elapsed time.
+- Split interactive discovery into three measured read-only stages: direct duplicate evidence, paged library descriptor loading, and evidence-only family reconciliation.
+- Avoided nested GraphQL work inside synchronous plugin operations so the review UI remains responsive and reports page-level progress while loading the library.
+- Loaded the shared discovery engine into the browser UI so multi-megabyte evidence is reconciled locally instead of crossing Stash's slow embedded `Map` boundary.
+- Added backend progress reporting throughout the monolithic Settings task so Stash's job progress now advances as completed work is measured.
+- Kept candidate matching, review drafts, approvals, and applied relationship behavior unchanged.
+
+## 0.5.21
+
+- Fixed `Make Set Primary` dropping the former primary scene from the family.
+- Promotion now performs an ordered swap: the chosen child becomes primary and the former primary occupies that child's previous slot.
+- Preserved every sibling, child label, sort position, and set relationship while transferring the optional hidden tag to the demoted primary.
+- Added a regression test covering a three-child family with a middle child promoted.
+
+## 0.5.20
+
+- Replaced post-pagination CSS hiding with Stash's native `custom_fields.variant_role != variant` scene filter.
+- Kept nested variants hidden by default while restoring truthful result totals, full configured page sizes, and correct pagination.
+- Updated the ellipsis-menu toggle to add or remove the native URL criterion without tags or scene metadata mutations.
+- Preserved existing search, sort, display, page-size, and unrelated custom-field criteria when toggling visibility.
+
+## 0.5.19
+
+- Restored hidden-by-default child variant cards on the Scenes browsing page.
+- Restored the persistent `Show nested variants` / `Hide nested variants` control in the Scenes toolbar ellipsis menu.
+- Retained the primary-card variant dropdown and documented that client-side hiding can reduce the visible count below Stash's configured page size.
+
+## 0.5.18
+
+- Removed client-side hiding of child variant cards after Stash paginates scene results.
+- Restored accurate Scenes-page item counts: a 40-item page now remains 40 visible cards even when it contains linked variants.
+- Removed the `Show nested variants` toolbar injection and its browser preference. Use an optional Stash-native saved filter when server-side variant filtering is desired.
+
 ## 0.5.17
 
 - Added consistent mouse-hover and keyboard-focus tooltips for Scene Variant controls in the player manager, candidate review, family search, scene search, browse controls, resize handles, and drag-enabled family cards.

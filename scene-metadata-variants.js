@@ -18,7 +18,7 @@
 var SceneMetadataVariants = (function () {
   "use strict";
 
-  var VERSION = "0.5.17";
+  var VERSION = "0.5.22";
   var PLUGIN_ID = "scene-metadata-variants-v1";
 
   var DEFAULT_CONFIG = {
@@ -202,6 +202,13 @@ var SceneMetadataVariants = (function () {
     } catch (e) {
       // Progress helpers vary by Stash runtime.
     }
+  }
+
+  function progressRange(runtime, start, end, completed, total) {
+    var span = Math.max(0, Number(end) - Number(start));
+    var denominator = Math.max(1, Number(total) || 0);
+    var ratio = Math.max(0, Math.min(1, (Number(completed) || 0) / denominator));
+    progress(runtime, Number(start) + span * ratio);
   }
 
   function gqlDo(query, variables, runtime, operationName) {
@@ -1306,11 +1313,13 @@ var SceneMetadataVariants = (function () {
     return partitions.filter(function (partition) { return partition.length > 1; });
   }
 
-  function duplicateSupportedNeighborhoodFamilies(anchorFamilies, cfg, runtime, sceneCache) {
+  function duplicateSupportedNeighborhoodFamilies(anchorFamilies, cfg, runtime, sceneCache, onProgress, sceneUniverse) {
     var out = [];
     var searchCache = {};
     var processed = {};
-    asArray(anchorFamilies).forEach(function (family, index) {
+    var anchors = asArray(anchorFamilies);
+    anchors.forEach(function (family, index) {
+      if (onProgress) onProgress(index, anchors.length);
       if (!family || !family.evidence || !family.evidence.stashDuplicateCluster) return;
       var identity = family.identity || {};
       if (!identity.artistKey || !identity.characterKey) return;
@@ -1326,12 +1335,18 @@ var SceneMetadataVariants = (function () {
         processed[familyKey] = true;
         var identityKey = identity.artistKey + "|" + identity.characterKey;
         if (!searchCache[identityKey]) {
-          try {
-            searchCache[identityKey] = findScenesForVariantIdentity(identity, runtime);
-          } catch (err) {
-            searchCache[identityKey] = [];
-            logLine("WARN", "variant identity neighborhood unavailable for " + identityKey + ": " +
-              String(err && err.message || err), runtime);
+          if (Array.isArray(sceneUniverse)) {
+            searchCache[identityKey] = sceneUniverse.filter(function (scene) {
+              return identityCompatible(sceneVariantIdentity(scene), identity);
+            });
+          } else {
+            try {
+              searchCache[identityKey] = findScenesForVariantIdentity(identity, runtime);
+            } catch (err) {
+              searchCache[identityKey] = [];
+              logLine("WARN", "variant identity neighborhood unavailable for " + identityKey + ": " +
+                String(err && err.message || err), runtime);
+            }
           }
         }
         var exactMatches = searchCache[identityKey].filter(function (scene) {
@@ -1360,10 +1375,11 @@ var SceneMetadataVariants = (function () {
         });
       });
     });
+    if (onProgress) onProgress(anchors.length, anchors.length);
     return out;
   }
 
-  function findAllScenesForVariantDiscovery(runtime, sceneCache) {
+  function findAllScenesForVariantDiscovery(runtime, sceneCache, onProgress) {
     var scenes = [];
     var page = 1;
     var perPage = 500;
@@ -1377,6 +1393,7 @@ var SceneMetadataVariants = (function () {
         scenes.push(scene);
         sceneCache[String(scene.id)] = scene;
       });
+      if (onProgress) onProgress(scenes.length, Number(root.count) || scenes.length);
       if (batch.length < perPage || scenes.length >= (Number(root.count) || scenes.length)) break;
       page++;
     }
@@ -1409,7 +1426,7 @@ var SceneMetadataVariants = (function () {
     return minimum;
   }
 
-  function descriptorVariantFamilies(scenes, cfg) {
+  function descriptorVariantFamilies(scenes, cfg, onProgress) {
     var groups = {};
     asArray(scenes).forEach(function (scene) {
       var identity = sceneVariantIdentity(scene);
@@ -1422,7 +1439,9 @@ var SceneMetadataVariants = (function () {
     });
 
     var families = [];
-    Object.keys(groups).forEach(function (key, groupIndex) {
+    var groupKeys = Object.keys(groups);
+    groupKeys.forEach(function (key, groupIndex) {
+      if (onProgress) onProgress(groupIndex, groupKeys.length);
       var signaledGroupScenes = groups[key].filter(function (scene) { return descriptorSignalCount(scene) > 0; });
       var eligibleGroupScenes = groups[key].filter(function (scene) {
         if (descriptorSignalCount(scene) > 0) return true;
@@ -1445,6 +1464,7 @@ var SceneMetadataVariants = (function () {
         families.push(family);
       });
     });
+    if (onProgress) onProgress(groupKeys.length, groupKeys.length);
     return families;
   }
 
@@ -1618,7 +1638,7 @@ var SceneMetadataVariants = (function () {
     };
   }
 
-  function actionableCandidateFamilies(families, cfg, runtime, sceneCache) {
+  function actionableCandidateFamilies(families, cfg, runtime, sceneCache, onProgress) {
     var suppressedExisting = 0;
     var suppressedSingletons = 0;
     var cache = sceneCache || {};
@@ -1637,7 +1657,9 @@ var SceneMetadataVariants = (function () {
     }
 
     var shaped = [];
-    asArray(families).forEach(function (family) {
+    var candidateFamilies = asArray(families);
+    candidateFamilies.forEach(function (family, familyIndex) {
+      if (onProgress) onProgress(familyIndex, candidateFamilies.length);
       var unassigned = asArray(family.members).filter(function (member) {
         return !memberExistingPrimaryId(member);
       });
@@ -1775,6 +1797,7 @@ var SceneMetadataVariants = (function () {
       if (candidateType !== "attach_to_existing" || target.ambiguous || family.evidence.alternateExistingFamilyPrimaryIds.length) family.status = "review";
       shaped.push(family);
     });
+    if (onProgress) onProgress(candidateFamilies.length, candidateFamilies.length);
 
     return {
       families: shaped,
@@ -1788,19 +1811,24 @@ var SceneMetadataVariants = (function () {
     return sorted[0] || null;
   }
 
-  function discoverVariantCandidates(options, runtime) {
-    var cfg = mergeConfig(options || {});
+  function discoverDuplicateCandidatePhase(cfg, runtime, sceneCache, rangeStart, rangeEnd) {
     var families = [];
     var clusters = [];
-    var sceneCache = {};
+    var cache = sceneCache || {};
+    var start = Number(rangeStart) || 0;
+    var end = Number(rangeEnd);
+    if (!isFinite(end)) end = 1;
+    progress(runtime, start);
     try {
       clusters = findDuplicateVariantClusters(cfg, runtime);
+      progressRange(runtime, start, end, 1, 10);
       clusters.forEach(function (cluster, index) {
-        asArray(cluster).forEach(function (scene) { sceneCache[String(scene.id)] = scene; });
+        asArray(cluster).forEach(function (scene) { cache[String(scene.id)] = scene; });
         partitionVariantCluster(cluster, cfg).forEach(function (partition) {
           var family = buildVariantFamily(partition.scenes, "stash_duplicate", cfg, index);
           if (family) families.push(family);
         });
+        progressRange(runtime, start, end, 1 + (8 * (index + 1) / Math.max(1, clusters.length)), 10);
       });
     } catch (err) {
       logLine("WARN", "duplicate scene discovery unavailable: " + String(err && err.message || err), runtime);
@@ -1824,24 +1852,64 @@ var SceneMetadataVariants = (function () {
           if (family && family.status !== "ignore") families.push(family);
         });
       });
-
-      try {
-        descriptorVariantFamilies(findAllScenesForVariantDiscovery(runtime, sceneCache), cfg).forEach(function (family) {
-          families.push(family);
-        });
-      } catch (descriptorErr) {
-        logLine("WARN", "descriptor family discovery unavailable: " +
-          String(descriptorErr && descriptorErr.message || descriptorErr), runtime);
-      }
     }
+    progress(runtime, end);
+    return { families: families, duplicateClusterCount: clusters.length };
+  }
 
-    duplicateSupportedNeighborhoodFamilies(families, cfg, runtime, sceneCache).forEach(function (family) {
+  function discoverDescriptorCandidatePhase(cfg, runtime, sceneCache, rangeStart, rangeEnd) {
+    var families = [];
+    var scenes = [];
+    var cache = sceneCache || {};
+    var start = Number(rangeStart) || 0;
+    var end = Number(rangeEnd);
+    if (!isFinite(end)) end = 1;
+    progress(runtime, start);
+    if (!cfg.variantFilenameHeuristics) {
+      progress(runtime, end);
+      return { families: families, scenesScanned: 0 };
+    }
+    try {
+      var scanEnd = start + ((end - start) * 0.58);
+      scenes = findAllScenesForVariantDiscovery(runtime, cache, function (completed, total) {
+        progressRange(runtime, start, scanEnd, completed, total);
+      });
+      families = descriptorVariantFamilies(scenes, cfg, function (completed, total) {
+        progressRange(runtime, scanEnd, end, completed, total);
+      });
+    } catch (descriptorErr) {
+      logLine("WARN", "descriptor family discovery unavailable: " +
+        String(descriptorErr && descriptorErr.message || descriptorErr), runtime);
+    }
+    progress(runtime, end);
+    return { families: families, scenesScanned: scenes.length };
+  }
+
+  function finalizeVariantCandidateDiscovery(rawFamilies, cfg, runtime, sceneCache, stats, rangeStart, rangeEnd, sceneUniverse) {
+    var families = asArray(rawFamilies).slice();
+    var cache = sceneCache || {};
+    var counters = stats || {};
+    var start = Number(rangeStart) || 0;
+    var end = Number(rangeEnd);
+    if (!isFinite(end)) end = 1;
+    var neighborhoodEnd = start + ((end - start) * 0.42);
+    var actionableStart = start + ((end - start) * 0.50);
+    progress(runtime, start);
+
+    duplicateSupportedNeighborhoodFamilies(families, cfg, runtime, cache, function (completed, total) {
+      progressRange(runtime, start, neighborhoodEnd, completed, total);
+    }, sceneUniverse).forEach(function (family) {
       families.push(family);
     });
     families = mergeFamilies(families, cfg);
-    var actionable = actionableCandidateFamilies(families, cfg, runtime, sceneCache);
+    progress(runtime, actionableStart);
+    var actionable = actionableCandidateFamilies(families, cfg, runtime, cache, function (completed, total) {
+      progressRange(runtime, actionableStart, end, completed, total);
+    });
     families = actionable.families.slice(0, cfg.variantDiscoveryLimit);
-    logLine("INFO", "VARIANT_DISCOVERY families=" + families.length + " duplicateClusters=" + clusters.length +
+    progress(runtime, end);
+    logLine("INFO", "VARIANT_DISCOVERY families=" + families.length + " duplicateClusters=" +
+      (Number(counters.duplicateClusterCount) || 0) +
       " suppressedExisting=" + actionable.suppressedExisting + " suppressedSingletons=" + actionable.suppressedSingletons +
       " dryRun=" + cfg.dryRun, runtime);
     return {
@@ -1862,6 +1930,110 @@ var SceneMetadataVariants = (function () {
       suppressedSingletonSuggestions: actionable.suppressedSingletons,
       families: families
     };
+  }
+
+  function discoverVariantCandidates(options, runtime) {
+    var cfg = mergeConfig(options || {});
+    var sceneCache = {};
+    var duplicatePhase = discoverDuplicateCandidatePhase(cfg, runtime, sceneCache, 0, 0.33);
+    var descriptorPhase = discoverDescriptorCandidatePhase(cfg, runtime, sceneCache, 0.33, 0.67);
+    return finalizeVariantCandidateDiscovery(
+      duplicatePhase.families.concat(descriptorPhase.families),
+      cfg,
+      runtime,
+      sceneCache,
+      {
+        duplicateClusterCount: duplicatePhase.duplicateClusterCount,
+        scenesScanned: descriptorPhase.scenesScanned
+      },
+      0.67,
+      1
+    );
+  }
+
+  function variantDiscoverySettings(options) {
+    var cfg = mergeConfig(options || {});
+    return {
+      result: "variant_discovery_settings",
+      distance: cfg.variantDiscoveryDistance,
+      durationDiff: cfg.variantDiscoveryDurationDiff,
+      limit: cfg.variantDiscoveryLimit
+    };
+  }
+
+  function discoverVariantCandidatesEvidencePhase(options, runtime) {
+    var cfg = mergeConfig(options || {});
+    var phase = String(getArg(options, "phase", "duplicates"));
+    var families = [];
+    var sceneCache = {};
+    progress(runtime, 0);
+    if (phase === "duplicates") {
+      var clusters = asArray(parseJSONMaybe(getArg(options, "duplicateClustersJson", "[]"), []));
+      clusters.forEach(function (cluster, index) {
+        partitionVariantCluster(cluster, cfg).forEach(function (partition) {
+          var family = buildVariantFamily(partition.scenes, "stash_duplicate", cfg, index);
+          if (family) families.push(family);
+        });
+      });
+      if (cfg.variantFilenameHeuristics) {
+        var filenameScenes = [];
+        var seenFilenameSceneIds = {};
+        clusters.forEach(function (cluster) {
+          asArray(cluster).forEach(function (scene) {
+            var id = String(scene.id);
+            if (!seenFilenameSceneIds[id]) {
+              seenFilenameSceneIds[id] = true;
+              filenameScenes.push(scene);
+            }
+          });
+        });
+        filenameVariantClusters(filenameScenes).forEach(function (cluster, index) {
+          partitionVariantCluster(cluster, cfg).forEach(function (partition) {
+            var family = buildVariantFamily(partition.scenes, "filename", cfg, index);
+            if (family && family.status !== "ignore") families.push(family);
+          });
+        });
+      }
+      progress(runtime, 1);
+      return { result: "variant_candidate_evidence_phase", phase: phase, families: families };
+    }
+
+    var allScenes = asArray(parseJSONMaybe(getArg(options, "allScenesJson", "[]"), []));
+    var sceneUniverse = allScenes.slice();
+    allScenes.forEach(function (scene) { sceneCache[String(scene.id)] = scene; });
+    if (phase === "descriptors") {
+      if (cfg.variantFilenameHeuristics) {
+        families = descriptorVariantFamilies(allScenes, cfg, function (completed, total) {
+          progressRange(runtime, 0, 1, completed, total);
+        });
+      }
+      progress(runtime, 1);
+      return { result: "variant_candidate_evidence_phase", phase: phase, families: families };
+    }
+    if (phase === "finalize") {
+      families = asArray(parseJSONMaybe(getArg(options, "partialFamiliesJson", "[]"), []));
+      asArray(parseJSONMaybe(getArg(options, "duplicateClustersJson", "[]"), [])).forEach(function (cluster) {
+        asArray(cluster).forEach(function (scene) {
+          var id = String(scene.id);
+          if (!sceneCache[id]) sceneUniverse.push(scene);
+          sceneCache[id] = scene;
+        });
+      });
+      return finalizeVariantCandidateDiscovery(
+        families,
+        cfg,
+        runtime,
+        sceneCache,
+        {
+          duplicateClusterCount: Number(getArg(options, "duplicateClusterCount", 0)) || 0,
+          scenesScanned: allScenes.length
+        },
+        0,
+        1,
+        sceneUniverse
+      );
+    }
+    throw new Error("Unknown evidence discovery phase: " + phase);
   }
 
   function buildRuntimeIndex(runtime, cfg, aliasMap) {
@@ -2310,15 +2482,33 @@ var SceneMetadataVariants = (function () {
     var cf = customFields(child);
     if (cf.variant_role !== "variant" || !cf.variant_parent_id) throw new Error("Scene is not a child variant");
     var oldParent = findScene(cf.variant_parent_id, runtime);
-    var siblings = variantChildren(oldParent).filter(function (id) { return String(id) !== String(child.id); });
+    var oldChildren = variantChildren(oldParent);
+    var childPosition = oldChildren.indexOf(String(child.id));
+    if (childPosition === -1) throw new Error("Selected child is missing from the primary scene child list; validate the variant graph before promotion");
+    var newChildren = oldChildren.slice();
+    newChildren[childPosition] = String(oldParent.id);
     var newSetId = variantSetIdFor(child.id);
-    updateSceneFields(child.id, { variant_role: "primary", variant_set_id: newSetId, variant_children: encodeChildren(siblings, cfg) }, ["variant_parent_id", "variant_label", "variant_sort_index"], runtime, cfg.dryRun);
+    var demotedLabel = String(getArg(options, "demotedLabel", "Former Primary") || "Former Primary");
+    updateSceneFields(child.id, { variant_role: "primary", variant_set_id: newSetId, variant_children: encodeChildren(newChildren, cfg) }, ["variant_parent_id", "variant_label", "variant_sort_index"], runtime, cfg.dryRun);
     removeHiddenTag(child, cfg, runtime);
-    updateSceneFields(oldParent.id, {}, ["variant_role", "variant_set_id", "variant_children"], runtime, cfg.dryRun);
-    for (var i = 0; i < siblings.length; i++) {
-      updateSceneFields(siblings[i], { variant_parent_id: String(child.id), variant_set_id: newSetId, variant_sort_index: String(i + 1) }, [], runtime, cfg.dryRun);
+    updateSceneFields(oldParent.id, {
+      variant_role: "variant",
+      variant_set_id: newSetId,
+      variant_parent_id: String(child.id),
+      variant_label: demotedLabel,
+      variant_sort_index: String(childPosition + 1)
+    }, ["variant_children"], runtime, cfg.dryRun);
+    addHiddenTag(oldParent, cfg, runtime);
+    for (var i = 0; i < newChildren.length; i++) {
+      if (String(newChildren[i]) === String(oldParent.id)) continue;
+      updateSceneFields(newChildren[i], { variant_parent_id: String(child.id), variant_set_id: newSetId, variant_sort_index: String(i + 1) }, [], runtime, cfg.dryRun);
     }
-    return { result: cfg.dryRun ? "dry_run" : "promoted", primaryId: String(child.id), children: siblings };
+    return {
+      result: cfg.dryRun ? "dry_run" : "promoted",
+      primaryId: String(child.id),
+      demotedPrimaryId: String(oldParent.id),
+      children: newChildren
+    };
   }
 
   function rebuildVariantSet(primarySceneId, options, runtime) {
@@ -2648,6 +2838,8 @@ var SceneMetadataVariants = (function () {
     if (mode === "reorder_variants") return reorderVariants(getArg(args, "primarySceneId"), parseJSONMaybe(getArg(args, "orderedChildIds", "[]"), []), args, runtime);
     if (mode === "rebuild_variant_set") return rebuildVariantSet(getArg(args, "primarySceneId") || getArg(args, "sceneId"), args, runtime);
     if (mode === "discover_variant_candidates") return discoverVariantCandidates(args, runtime);
+    if (mode === "variant_discovery_settings") return variantDiscoverySettings(args);
+    if (mode === "discover_variant_candidates_evidence_phase") return discoverVariantCandidatesEvidencePhase(args, runtime);
     if (mode === "preview_variant_batch") return applyVariantBatch(Object.assign({}, args || {}, { dryRun: true }), runtime);
     if (mode === "apply_variant_batch") return applyVariantBatch(args, runtime);
     if (mode === "validate_variant_graph") return validateVariantGraph(args, runtime);
@@ -2695,6 +2887,7 @@ var SceneMetadataVariants = (function () {
     reorderVariants: reorderVariants,
     rebuildVariantSet: rebuildVariantSet,
     discoverVariantCandidates: discoverVariantCandidates,
+    discoverVariantCandidatesEvidencePhase: discoverVariantCandidatesEvidencePhase,
     applyVariantBatch: applyVariantBatch,
     validateVariantGraph: validateVariantGraph,
     rollbackVariantData: rollbackVariantData,
